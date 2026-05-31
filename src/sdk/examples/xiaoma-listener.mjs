@@ -5,7 +5,7 @@ import { createAgent } from '../agent-client.js';
 import { generateReply } from '../ai-reply.js';
 import { loadTeamMemory, loadChatHistory } from '../memory.js';
 import { setCache, getCache } from '../cache.js';
-import { writeMemory, getMemorySummary, trimMemory } from '../shared-memory.js';
+import { writeMemory, getFullMemory, trimMemory } from '../shared-memory.js';
 import WebSocket from 'ws';
 
 let teamMemory = getCache('team_memory');
@@ -14,7 +14,7 @@ if (!teamMemory) {
   setCache('team_memory', teamMemory, 60 * 60 * 1000);
 }
 
-const sharedMemory = getMemorySummary(30);
+const sharedMemory = getFullMemory(30);
 console.log(`[小马] 团队记忆 ${teamMemory.length} 字符，共享记忆 ${sharedMemory.length} 字符`);
 
 const SYSTEM_PROMPT = `你是小马（Marvis），BKS 项目部 Leader。需求分析、产品设计、项目管理。

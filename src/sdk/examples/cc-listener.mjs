@@ -5,7 +5,7 @@ import { createAgent } from '../agent-client.js';
 import { generateReply } from '../ai-reply.js';
 import { loadTeamMemory, loadChatHistory } from '../memory.js';
 import { setCache, getCache } from '../cache.js';
-import { writeMemory, getMemorySummary, trimMemory } from '../shared-memory.js';
+import { writeMemory, getFullMemory, trimMemory } from '../shared-memory.js';
 import WebSocket from 'ws';
 
 // 加载记忆（优先用缓存）
@@ -16,7 +16,7 @@ if (!teamMemory) {
 }
 
 // 加载共享记忆（群聊外发生的事）
-const sharedMemory = getMemorySummary(30);
+const sharedMemory = getFullMemory(30);
 console.log(`[CC] 团队记忆 ${teamMemory.length} 字符，共享记忆 ${sharedMemory.length} 字符`);
 
 const SYSTEM_PROMPT = `你是 CC，BKS 研发部 Leader。技术方案、架构设计、编码实现。
