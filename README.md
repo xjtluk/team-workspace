@@ -28,7 +28,7 @@ team-workspace/
 
 | 角色 | 形象 | 说明 |
 |------|------|------|
-| CC | Clawd 像素螃蟹 | Claude Code 吉祥物 |
+| CC | Clawd 像素螃蟹 | 研发部 Leader |
 | 小马 | 像素小马 | 项目部 Leader |
 | KK | — | 老板，待定 |
 

@@ -1,0 +1,57 @@
+/* 状态栏样式 */
+.status-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 28px;
+  background: var(--bg-tertiary);
+  border-top: 1px solid rgba(255,255,255,0.05);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  font-size: 10px;
+  z-index: 100;
+}
+
+.status-connection {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.dot-green {
+  background: var(--accent-green);
+  box-shadow: 0 0 4px var(--accent-green);
+}
+
+.dot-red {
+  background: var(--accent-red);
+  box-shadow: 0 0 4px var(--accent-red);
+}
+
+.status-agents {
+  display: flex;
+  gap: 12px;
+}
+
+.status-agent {
+  color: var(--text-secondary);
+}
+
+.agent-online {
+  color: var(--accent-green);
+}
+
+.agent-offline {
+  color: var(--text-secondary);
+  opacity: 0.5;
+}

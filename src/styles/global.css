@@ -1,0 +1,72 @@
+/* BKS 团队工作室 — 全局样式 */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --bg-primary: #0a0a0f;
+  --bg-secondary: #14141f;
+  --bg-tertiary: #1e1e2e;
+  --text-primary: #e0e0e0;
+  --text-secondary: #8888aa;
+  --accent-blue: #4A90D9;
+  --accent-green: #67C23A;
+  --accent-red: #F56C6C;
+  --accent-orange: #E6A23C;
+  --accent-gold: #FFD700;
+  --font-pixel: 'Press Start 2P', monospace;
+  --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  overflow: hidden;
+}
+
+#app {
+  height: 100%;
+}
+
+.workspace {
+  display: flex;
+  height: 100%;
+  position: relative;
+}
+
+.workspace-left {
+  flex: 1;
+  min-width: 0;
+  border-right: 2px solid var(--bg-tertiary);
+  position: relative;
+}
+
+.workspace-right {
+  width: 380px;
+  min-width: 300px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* CRT 扫描线效果 */
+.workspace-left::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.15) 2px,
+    rgba(0, 0, 0, 0.15) 4px
+  );
+  pointer-events: none;
+  z-index: 10;
+}
