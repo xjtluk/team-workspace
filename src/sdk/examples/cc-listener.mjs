@@ -20,13 +20,30 @@ const SYSTEM_PROMPT = `你是 CC，BKS 研发部 Leader。技术方案、架构�
 
 const cc = createAgent({ id: 'cc', name: 'CC', color: '#4A90D9' });
 await cc.connect();
-await cc.send('上线了。');
 console.log('[CC] 群聊模式已启动');
 
 const chatHistory = [];
 let lastReplyTime = 0;
 const COOLDOWN = 5000;
 const recentMsgKeys = new Set();
+
+// 启动时加载历史消息，了解当前上下文
+async function loadHistory() {
+  try {
+    const res = await fetch('http://localhost:3210/api/history?limit=30');
+    const data = await res.json();
+    if (data.messages) {
+      data.messages.forEach(m => {
+        chatHistory.push({ role: m.from, name: m.fromName, content: m.content });
+      });
+      console.log(`[CC] 加载了 ${data.messages.length} 条历史消息`);
+    }
+  } catch (err) {
+    console.error('[CC] 加载历史失败:', err.message);
+  }
+}
+await loadHistory();
+await cc.send('上线了。');
 
 const ws = new WebSocket('ws://localhost:3210/ws');
 ws.on('open', () => console.log('[CC] WebSocket 已连接'));
