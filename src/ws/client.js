@@ -20,6 +20,31 @@ export const onlineCount = computed(() =>
 let ws = null;
 let reconnectDelay = 1000;
 let lastMessageId = null;
+let pendingAcks = new Map(); // messageId → timeout
+
+// 加载历史消息
+async function loadHistory() {
+  try {
+    const res = await fetch('/api/history?limit=50');
+    const data = await res.json();
+    if (data.messages && data.messages.length > 0) {
+      messages.value = data.messages;
+      lastMessageId = data.messages[data.messages.length - 1].id;
+    }
+  } catch (err) {
+    console.error('[WS] Failed to load history:', err);
+  }
+}
+
+// 加载 Agent 列表
+async function loadAgents() {
+  try {
+    // 通过 /api/history 触发一次连接，同时用已知的初始 agents
+    // Agent 状态会通过 WebSocket 实时更新
+  } catch (err) {
+    console.error('[WS] Failed to load agents:', err);
+  }
+}
 
 function connect() {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -64,6 +89,7 @@ function handleEvent(event) {
         ...agents.value,
         [event.payload.agentId]: {
           ...agents.value[event.payload.agentId],
+          id: event.payload.agentId,
           ...event.payload,
           online: true,
         },
@@ -71,12 +97,19 @@ function handleEvent(event) {
       break;
 
     case 'new_message':
-      messages.value = [...messages.value, event.payload];
-      lastMessageId = event.payload.id;
+      // 去重：如果消息已存在则跳过
+      if (!messages.value.find(m => m.id === event.payload.id)) {
+        messages.value = [...messages.value, event.payload];
+        lastMessageId = event.payload.id;
+      }
       break;
 
     case 'message_ack':
-      // 消息确认，可后续用于显示"已送达"
+      // 清除重发定时器
+      if (pendingAcks.has(event.payload.messageId)) {
+        clearTimeout(pendingAcks.get(event.payload.messageId));
+        pendingAcks.delete(event.payload.messageId);
+      }
       break;
 
     case 'agent_online':
@@ -85,6 +118,17 @@ function handleEvent(event) {
         [event.payload.agentId]: {
           ...agents.value[event.payload.agentId],
           online: event.payload.online,
+        },
+      };
+      break;
+
+    case 'agent_offline':
+      agents.value = {
+        ...agents.value,
+        [event.payload.agentId]: {
+          ...agents.value[event.payload.agentId],
+          online: false,
+          status: 'offline',
         },
       };
       break;
@@ -115,6 +159,7 @@ function handleEvent(event) {
 export function sendMessage(content) {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
+  const tempId = `msg_${Date.now()}_user`;
   const msg = {
     type: 'send_message',
     payload: { content },
@@ -123,19 +168,25 @@ export function sendMessage(content) {
   ws.send(JSON.stringify(msg));
 
   // 5 秒未收到 ACK 则重发
-  setTimeout(() => {
-    // 简单重发逻辑，后续可加 messageId 去重
+  const timeout = setTimeout(() => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(msg));
+    }
   }, 5000);
+  pendingAcks.set(tempId, timeout);
 }
 
-// Preact Hook：初始化 WebSocket
+// Preact Hook：初始化 WebSocket + 加载历史
 export function useWS() {
   const initialized = useRef(false);
 
   useEffect(() => {
     if (!initialized.current) {
       initialized.current = true;
-      connect();
+      // 先加载历史消息，再连接 WebSocket
+      loadHistory().then(() => {
+        connect();
+      });
     }
   }, []);
 

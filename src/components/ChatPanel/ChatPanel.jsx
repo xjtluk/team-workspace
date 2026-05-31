@@ -26,13 +26,14 @@ export function ChatPanel({ messages, agents, onSend }) {
   }, [messages]);
 
   const agentList = Object.values(agents.value || agents);
+  const offlineAgents = agentList.filter(a => !a.online && a.id !== 'kk');
 
   return (
     <div class="chat-panel">
       <div class="chat-header">
         <span class="chat-title">BKS Studio</span>
         <span class="chat-online">
-          {agentList.filter(a => a.online).length} / {agentList.length} 在线
+          {agentList.filter(a => a.online).length} / {agentList.length} online
         </span>
       </div>
 
@@ -47,6 +48,16 @@ export function ChatPanel({ messages, agents, onSend }) {
           />
         ))}
       </div>
+
+      {offlineAgents.length > 0 && (
+        <div class="offline-indicator">
+          {offlineAgents.map(a => (
+            <span key={a.id} class="offline-tag">
+              {a.name} offline
+            </span>
+          ))}
+        </div>
+      )}
 
       <ChatInput onSend={onSend} />
     </div>

@@ -10,6 +10,22 @@ export function setupWS(wss) {
     ws.isAlive = true;
     ws.on('pong', () => { ws.isAlive = true; });
 
+    // 发送当前 Agent 状态给新连接的客户端
+    const agents = query('SELECT * FROM agents');
+    agents.forEach(agent => {
+      ws.send(JSON.stringify({
+        type: agent.online ? 'agent_online' : 'agent_offline',
+        payload: {
+          agentId: agent.id,
+          online: !!agent.online,
+          status: agent.current_status,
+          activity: agent.current_activity,
+          progress: agent.progress,
+          location: agent.location,
+        },
+      }));
+    });
+
     ws.on('message', (raw) => {
       try {
         const msg = JSON.parse(raw);

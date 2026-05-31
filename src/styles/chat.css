@@ -151,3 +151,87 @@
 .chat-send-btn:hover {
   opacity: 0.9;
 }
+
+/* 离线指示器 */
+.offline-indicator {
+  display: flex;
+  gap: 8px;
+  padding: 6px 12px;
+  border-top: 1px solid rgba(255,255,255,0.05);
+  background: rgba(245, 108, 108, 0.05);
+  flex-wrap: wrap;
+}
+
+.offline-tag {
+  font-size: 10px;
+  color: var(--accent-red);
+  opacity: 0.7;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(245, 108, 108, 0.1);
+}
+
+/* 系统消息 */
+.message-system {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.system-text {
+  font-size: 10px;
+  color: var(--text-secondary);
+  opacity: 0.6;
+}
+
+.system-time {
+  font-size: 9px;
+  color: var(--text-secondary);
+  opacity: 0.4;
+}
+
+/* Markdown 内容样式 */
+.msg-content p {
+  margin: 0;
+}
+
+.msg-content code {
+  background: rgba(255,255,255,0.08);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-family: 'Consolas', monospace;
+}
+
+.msg-content pre {
+  background: rgba(0,0,0,0.3);
+  padding: 8px;
+  border-radius: 4px;
+  overflow-x: auto;
+  margin: 4px 0;
+}
+
+.msg-content pre code {
+  background: none;
+  padding: 0;
+}
+
+.msg-content a {
+  color: var(--accent-blue);
+  text-decoration: none;
+}
+
+.msg-content a:hover {
+  text-decoration: underline;
+}
+
+.msg-content strong {
+  color: #fff;
+}
+
+.msg-content em {
+  color: var(--text-secondary);
+  font-style: italic;
+}

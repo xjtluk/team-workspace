@@ -7,7 +7,7 @@ import { initDB } from './db.js';
 import { setupWS } from './ws/handler.js';
 import statusRouter from './routes/status.js';
 import messageRouter from './routes/message.js';
-import heartbeatRouter from './routes/heartbeat.js';
+import heartbeatRouter, { startHeartbeatMonitor } from './routes/heartbeat.js';
 import registerRouter from './routes/register.js';
 import historyRouter from './routes/history.js';
 
@@ -39,6 +39,7 @@ async function start() {
 
   server.listen(PORT, () => {
     console.log(`[BKS Workspace] Server running at http://localhost:${PORT}`);
+    startHeartbeatMonitor();
   });
 }
 
