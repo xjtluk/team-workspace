@@ -43,6 +43,7 @@ export function createAgent(config) {
 
   let heartbeatTimer = null;
   let connected = false;
+  let onMessageCallback = null;
 
   // ── HTTP 请求辅助 ──
 
@@ -82,9 +83,19 @@ export function createAgent(config) {
       }
     }
 
-    // 启动心跳
-    heartbeatTimer = setInterval(() => {
-      post('/api/heartbeat', { agentId: id }).catch(() => {});
+    // 启动心跳（含离线消息拉取）
+    heartbeatTimer = setInterval(async () => {
+      try {
+        const data = await post('/api/heartbeat', { agentId: id });
+        // 离线期间有排队消息 → 拉取并回调
+        if (data.pendingMessages > 0 && onMessageCallback) {
+          const history = await fetch(`${serverUrl}/api/history?limit=${data.pendingMessages}`)
+            .then(r => r.json());
+          if (history.messages) {
+            history.messages.forEach(msg => onMessageCallback(msg));
+          }
+        }
+      } catch {}
     }, opts.heartbeatInterval);
 
     // 上报在线状态
@@ -201,6 +212,14 @@ export function createAgent(config) {
   }
 
   /**
+   * 注册离线消息回调（上线后收到排队消息时触发）
+   * @param {Function} callback — (message) => void
+   */
+  function onMessage(callback) {
+    onMessageCallback = callback;
+  }
+
+  /**
    * 断开连接：标记离线 + 停止心跳
    */
   async function disconnect() {
@@ -243,5 +262,6 @@ export function createAgent(config) {
     talk,
     send,
     executeTask,
+    onMessage,
   };
 }
