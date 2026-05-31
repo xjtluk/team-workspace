@@ -11,20 +11,12 @@ export function ChatInput({ onSend }) {
     setValue('');
   };
 
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit(e);
-    }
-  };
-
   return (
     <form class="chat-input" onSubmit={handleSubmit}>
       <input
         type="text"
         value={value}
         onInput={(e) => setValue(e.target.value)}
-        onKeyDown={handleKeyDown}
         placeholder="输入消息..."
         class="chat-input-field"
       />
