@@ -1,0 +1,22 @@
+# 依赖
+node_modules/
+package-lock.json
+yarn.lock
+
+# 构建产物
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+
+# 运行时
+data/
+*.log
+.env
+
+# 系统
+.DS_Store
+Thumbs.db
+desktop.ini
