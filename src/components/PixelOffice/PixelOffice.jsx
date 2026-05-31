@@ -104,6 +104,7 @@ export function PixelOffice({ agents }) {
 
       // 更新并渲染角色
       Object.values(currentAgents).forEach(agent => {
+        if (!agent || !agent.id) return; // 防护：跳过无效 agent
         if (agent.id === 'kk') return; // KK 不渲染像素角色
         const grid = GRID_REGISTRY[agent.id];
         if (!grid) return;

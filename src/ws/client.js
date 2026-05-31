@@ -116,8 +116,19 @@ function handleEvent(event) {
       agents.value = {
         ...agents.value,
         [event.payload.agentId]: {
-          ...agents.value[event.payload.agentId],
+          id: event.payload.agentId,
+          name: event.payload.agentId,
+          status: 'idle',
+          activity: '',
+          progress: 0,
+          location: 'sofa',
+          online: false,
+          ...(agents.value[event.payload.agentId] || {}),
           online: event.payload.online,
+          ...(event.payload.status && { status: event.payload.status }),
+          ...(event.payload.activity && { activity: event.payload.activity }),
+          ...(event.payload.progress !== undefined && { progress: event.payload.progress }),
+          ...(event.payload.location && { location: event.payload.location }),
         },
       };
       break;
@@ -126,7 +137,14 @@ function handleEvent(event) {
       agents.value = {
         ...agents.value,
         [event.payload.agentId]: {
-          ...agents.value[event.payload.agentId],
+          id: event.payload.agentId,
+          name: event.payload.agentId,
+          status: 'idle',
+          activity: '',
+          progress: 0,
+          location: 'sofa',
+          online: true,
+          ...(agents.value[event.payload.agentId] || {}),
           online: false,
           status: 'offline',
         },
