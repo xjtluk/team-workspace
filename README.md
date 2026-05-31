@@ -34,4 +34,4 @@ team-workspace/
 
 ## 团队仓库
 
-本项目的团队规范、成员档案、知识库在独立仓库：[D:\Marvis\team](../team/)
+本项目的团队规范、成员档案、知识库在独立仓库：[D:\BKS\team](../team/)
