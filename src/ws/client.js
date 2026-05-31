@@ -46,12 +46,24 @@ async function loadAgents() {
   }
 }
 
+let connecting = false;
+
 function connect() {
+  // 防止重复连接
+  if (connecting || (ws && ws.readyState === WebSocket.OPEN)) return;
+  connecting = true;
+
+  // 关闭旧连接
+  if (ws) {
+    try { ws.close(); } catch {}
+  }
+
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
   ws = new WebSocket(`${protocol}//${location.host}/ws`);
 
   ws.onopen = () => {
     wsConnected.value = true;
+    connecting = false;
     reconnectDelay = 1000;
 
     // 断线重连后补拉消息
@@ -67,10 +79,12 @@ function connect() {
 
   ws.onclose = () => {
     wsConnected.value = false;
+    connecting = false;
     scheduleReconnect();
   };
 
   ws.onerror = () => {
+    connecting = false;
     ws.close();
   };
 }
