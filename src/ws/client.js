@@ -18,9 +18,11 @@ export const onlineCount = computed(() =>
 
 // WebSocket 客户端
 let ws = null;
+let connectionId = 0; // 连接版本号，只有最新的连接处理消息
 let reconnectDelay = 1000;
 let lastMessageId = null;
 let pendingAcks = new Map(); // messageId → timeout
+let processedMsgIds = new Set(); // 已处理的消息 ID（防止重复）
 
 // 加载历史消息
 async function loadHistory() {
@@ -52,12 +54,14 @@ function connect() {
   // 防止重复连接
   if (connecting || (ws && ws.readyState === WebSocket.OPEN)) return;
   connecting = true;
+  connectionId++; // 递增连接 ID
 
   // 关闭旧连接
   if (ws) {
     try { ws.close(); } catch {}
   }
 
+  const myConnId = connectionId; // 捕获当前连接 ID
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
   ws = new WebSocket(`${protocol}//${location.host}/ws`);
 
@@ -73,6 +77,8 @@ function connect() {
   };
 
   ws.onmessage = (event) => {
+    // 只有最新连接才处理消息
+    if (myConnId !== connectionId) return;
     const data = JSON.parse(event.data);
     handleEvent(data);
   };
@@ -111,10 +117,16 @@ function handleEvent(event) {
       break;
 
     case 'new_message':
-      // 去重：如果消息已存在则跳过
-      if (!messages.value.find(m => m.id === event.payload.id)) {
+      // 去重：用 Set 检查，比数组查找更快更可靠
+      if (!processedMsgIds.has(event.payload.id)) {
+        processedMsgIds.add(event.payload.id);
         messages.value = [...messages.value, event.payload];
         lastMessageId = event.payload.id;
+        // 防止 Set 无限增长
+        if (processedMsgIds.size > 200) {
+          const arr = [...processedMsgIds];
+          processedMsgIds = new Set(arr.slice(-100));
+        }
       }
       break;
 
@@ -187,25 +199,14 @@ function handleEvent(event) {
   }
 }
 
-// 发送消息（带 ACK 重试）
+// 发送消息
 export function sendMessage(content) {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
-  const tempId = `msg_${Date.now()}_user`;
-  const msg = {
+  ws.send(JSON.stringify({
     type: 'send_message',
     payload: { content },
-  };
-
-  ws.send(JSON.stringify(msg));
-
-  // 5 秒未收到 ACK 则重发
-  const timeout = setTimeout(() => {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify(msg));
-    }
-  }, 5000);
-  pendingAcks.set(tempId, timeout);
+  }));
 }
 
 // Preact Hook：初始化 WebSocket + 加载历史
