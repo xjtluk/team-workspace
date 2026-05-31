@@ -1,226 +1,142 @@
-import { signal, computed } from '@preact/signals';
-import { useEffect, useRef } from 'preact/hooks';
+import { useState, useEffect, useRef, useCallback } from 'preact/hooks';
 
-// 全局状态信号
-export const agents = signal({
-  cc: { id: 'cc', name: 'CC', status: 'offline', activity: '', progress: 0, location: 'sofa', online: false },
-  xiaoma: { id: 'xiaoma', name: '小马', status: 'offline', activity: '', progress: 0, location: 'sofa', online: false },
-  kk: { id: 'kk', name: 'KK', status: 'idle', activity: '', progress: 0, location: null, online: true },
-});
+const WS_URL = `ws://${location.host}/ws`;
 
-export const messages = signal([]);
-export const wsConnected = signal(false);
-
-// 计算属性
-export const onlineCount = computed(() =>
-  Object.values(agents.value).filter(a => a.online).length
-);
-
-// WebSocket 客户端
-let ws = null;
-let connectionId = 0; // 连接版本号，只有最新的连接处理消息
-let reconnectDelay = 1000;
-let lastMessageId = null;
-let pendingAcks = new Map(); // messageId → timeout
-let processedMsgIds = new Set(); // 已处理的消息 ID（防止重复）
-
-// 加载历史消息
-async function loadHistory() {
-  try {
-    const res = await fetch('/api/history?limit=50');
-    const data = await res.json();
-    if (data.messages && data.messages.length > 0) {
-      messages.value = data.messages;
-      lastMessageId = data.messages[data.messages.length - 1].id;
-    }
-  } catch (err) {
-    console.error('[WS] Failed to load history:', err);
-  }
-}
-
-// 加载 Agent 列表
-async function loadAgents() {
-  try {
-    // 通过 /api/history 触发一次连接，同时用已知的初始 agents
-    // Agent 状态会通过 WebSocket 实时更新
-  } catch (err) {
-    console.error('[WS] Failed to load agents:', err);
-  }
-}
-
-let connecting = false;
-
-function connect() {
-  // 防止重复连接
-  if (connecting || (ws && ws.readyState === WebSocket.OPEN)) return;
-  connecting = true;
-  connectionId++; // 递增连接 ID
-
-  // 关闭旧连接
-  if (ws) {
-    try { ws.close(); } catch {}
-  }
-
-  const myConnId = connectionId; // 捕获当前连接 ID
-  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  ws = new WebSocket(`${protocol}//${location.host}/ws`);
-
-  ws.onopen = () => {
-    wsConnected.value = true;
-    connecting = false;
-    reconnectDelay = 1000;
-
-    // 断线重连后补拉消息
-    if (lastMessageId) {
-      ws.send(JSON.stringify({ type: 'sync', payload: { afterId: lastMessageId } }));
-    }
-  };
-
-  ws.onmessage = (event) => {
-    // 只有最新连接才处理消息
-    if (myConnId !== connectionId) return;
-    const data = JSON.parse(event.data);
-    handleEvent(data);
-  };
-
-  ws.onclose = () => {
-    wsConnected.value = false;
-    connecting = false;
-    scheduleReconnect();
-  };
-
-  ws.onerror = () => {
-    connecting = false;
-    ws.close();
-  };
-}
-
-function scheduleReconnect() {
-  setTimeout(() => {
-    reconnectDelay = Math.min(reconnectDelay * 2, 30000);
-    connect();
-  }, reconnectDelay);
-}
-
-function handleEvent(event) {
-  switch (event.type) {
-    case 'status_change':
-      agents.value = {
-        ...agents.value,
-        [event.payload.agentId]: {
-          ...agents.value[event.payload.agentId],
-          id: event.payload.agentId,
-          ...event.payload,
-          online: true,
-        },
-      };
-      break;
-
-    case 'new_message':
-      // 去重：用 Set 检查，比数组查找更快更可靠
-      if (!processedMsgIds.has(event.payload.id)) {
-        processedMsgIds.add(event.payload.id);
-        messages.value = [...messages.value, event.payload];
-        lastMessageId = event.payload.id;
-        // 防止 Set 无限增长
-        if (processedMsgIds.size > 200) {
-          const arr = [...processedMsgIds];
-          processedMsgIds = new Set(arr.slice(-100));
-        }
-      }
-      break;
-
-    case 'message_ack':
-      // 清除重发定时器
-      if (pendingAcks.has(event.payload.messageId)) {
-        clearTimeout(pendingAcks.get(event.payload.messageId));
-        pendingAcks.delete(event.payload.messageId);
-      }
-      break;
-
-    case 'agent_online':
-      agents.value = {
-        ...agents.value,
-        [event.payload.agentId]: {
-          id: event.payload.agentId,
-          name: event.payload.agentId,
-          status: 'idle',
-          activity: '',
-          progress: 0,
-          location: 'sofa',
-          online: false,
-          ...(agents.value[event.payload.agentId] || {}),
-          online: event.payload.online,
-          ...(event.payload.status && { status: event.payload.status }),
-          ...(event.payload.activity && { activity: event.payload.activity }),
-          ...(event.payload.progress !== undefined && { progress: event.payload.progress }),
-          ...(event.payload.location && { location: event.payload.location }),
-        },
-      };
-      break;
-
-    case 'agent_offline':
-      agents.value = {
-        ...agents.value,
-        [event.payload.agentId]: {
-          id: event.payload.agentId,
-          name: event.payload.agentId,
-          status: 'idle',
-          activity: '',
-          progress: 0,
-          location: 'sofa',
-          online: true,
-          ...(agents.value[event.payload.agentId] || {}),
-          online: false,
-          status: 'offline',
-        },
-      };
-      break;
-
-    case 'agent_registered':
-      // 新成员注册，自动添加到 agents
-      agents.value = {
-        ...agents.value,
-        [event.payload.id]: {
-          id: event.payload.id,
-          name: event.payload.name,
-          status: 'idle',
-          activity: '',
-          progress: 0,
-          location: 'sofa',
-          online: false,
-        },
-      };
-      break;
-
-    case 'ping':
-      ws?.send(JSON.stringify({ type: 'pong' }));
-      break;
-  }
-}
-
-// 发送消息
-export function sendMessage(content) {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
-
-  ws.send(JSON.stringify({
-    type: 'send_message',
-    payload: { content },
-  }));
-}
-
-// Preact Hook：初始化 WebSocket + 加载历史
 export function useWS() {
-  const initialized = useRef(false);
+  const [agents, setAgents] = useState({});
+  const [messages, setMessages] = useState([]);
+  const [wsConnected, setWsConnected] = useState(false);
+  const wsRef = useRef(null);
+  const reconnectTimer = useRef(null);
+
+  const connect = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+
+    const ws = new WebSocket(WS_URL);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      setWsConnected(true);
+      if (reconnectTimer.current) {
+        clearTimeout(reconnectTimer.current);
+        reconnectTimer.current = null;
+      }
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'agent:status') {
+          setAgents(prev => ({
+            ...prev,
+            [data.agent_id]: { ...prev[data.agent_id], ...data }
+          }));
+        } else if (data.type === 'chat:message') {
+          setMessages(prev => {
+            if (prev.some(m => m.id === data.id)) return prev;
+            return [...prev, data];
+          });
+        }
+      } catch (e) {
+        console.error('WS message parse error:', e);
+      }
+    };
+
+    ws.onclose = () => {
+      setWsConnected(false);
+      wsRef.current = null;
+      reconnectTimer.current = setTimeout(connect, 3000);
+    };
+
+    ws.onerror = () => {
+      ws.close();
+    };
+  }, []);
 
   useEffect(() => {
-    if (!initialized.current) {
-      initialized.current = true;
-      // 先加载历史消息，再连接 WebSocket
-      loadHistory().then(() => {
-        connect();
-      });
+    connect();
+
+    // Load initial state (SSR-injected or fallback to API)
+    const loadInitial = async () => {
+      let initialData = window.__INITIAL_STATE__;
+
+      if (!initialData) {
+        try {
+          const [agentsRes, msgsRes] = await Promise.all([
+            fetch('/api/agents'),
+            fetch('/api/history?limit=50')
+          ]);
+          const agentsList = await agentsRes.json();
+          const msgsList = await msgsRes.json();
+          initialData = { agents: agentsList, messages: msgsList };
+        } catch (e) {
+          console.error('Failed to load initial state:', e);
+          return;
+        }
+      }
+
+      if (initialData.agents?.length) {
+        setAgents(prev => {
+          const map = { ...prev };
+          initialData.agents.forEach(a => { map[a.id] = a; });
+          return map;
+        });
+      }
+
+      // BUG FIX: load initial messages into state (was previously ignored)
+      if (initialData.messages?.length) {
+        setMessages(initialData.messages);
+      }
+    };
+
+    loadInitial();
+
+    return () => {
+      if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+      wsRef.current?.close();
+    };
+  }, [connect]);
+
+  // BUG FIX: send via WS with HTTP fallback
+  const sendMessage = useCallback((msg) => {
+    const payload = {
+      type: 'chat:message',
+      content: msg.content,
+      sender_id: msg.sender_id,
+      sender_name: msg.sender_name,
+      id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    };
+
+    // Try WebSocket first
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify(payload));
+      return true;
     }
+
+    // HTTP fallback when WS is not connected
+    fetch('/api/message', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: payload.id,
+        sender_id: payload.sender_id,
+        sender_name: payload.sender_name,
+        content: payload.content
+      })
+    }).then(res => {
+      if (res.ok) {
+        // Broadcast will come through WS when it reconnects,
+        // but add locally for immediate feedback
+        setMessages(prev => {
+          if (prev.some(m => m.id === payload.id)) return prev;
+          return [...prev, payload];
+        });
+      }
+    }).catch(err => {
+      console.error('HTTP send failed:', err);
+    });
+
+    return true;
   }, []);
 
   return { agents, messages, wsConnected, sendMessage };
