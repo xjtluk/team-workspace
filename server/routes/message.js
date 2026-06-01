@@ -17,7 +17,8 @@ router.post('/', (req, res) => {
   }
 
   const now = Date.now();
-  const messageId = `msg_${now}_${from}`;
+  const rand = Math.random().toString(36).substring(2, 8);
+  const messageId = `msg_${now}_${from}_${rand}`;
 
   run(
     `INSERT INTO messages (id, from_id, from_name, content, type, reply_to, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
