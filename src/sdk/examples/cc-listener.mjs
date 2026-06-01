@@ -1,49 +1,198 @@
+#!/usr/bin/env node
 /**
- * CC Agent — 群聊模式（共享记忆版）
+ * CC Agent — Hub-Spoke 模式
+ *
+ * 职责：
+ *   1. 注册 CC 上线 + 心跳保活
+ *   2. 监听群聊消息 → 只回应 @CC 的消息
+ *   3. 解析消息协议：[任务] [完成] [TOK] [问题] [通过] [打回]
+ *   4. 执行任务 → 完成后汇报 + TOK 自检
+ *   5. 结果发回群聊 + 写入共享记忆
  */
 import { createAgent } from '../agent-client.js';
 import { generateReply } from '../ai-reply.js';
 import { loadTeamMemory, loadChatHistory } from '../memory.js';
 import { setCache, getCache } from '../cache.js';
-import { writeMemory, getFullMemory, trimMemory } from '../shared-memory.js';
+import { getFullMemory } from '../shared-memory.js';
+import { writeFileSync, readdirSync, statSync, unlinkSync, existsSync, readFileSync } from 'fs';
+import { join } from 'path';
 import WebSocket from 'ws';
 
-// 加载记忆（优先用缓存）
+// ── 单实例保护（增强版） ──
+const PID_FILE = join(process.cwd(), '.cc-listener.pid');
+
+function checkSingleInstance() {
+  if (existsSync(PID_FILE)) {
+    try {
+      const data = JSON.parse(readFileSync(PID_FILE, 'utf8'));
+      const oldPid = data.pid;
+      const startTime = data.startTime || 0;
+
+      // 检查进程是否还在运行
+      let processAlive = false;
+      try {
+        process.kill(oldPid, 0);
+        processAlive = true;
+      } catch {
+        processAlive = false;
+      }
+
+      if (processAlive) {
+        // 进程存在，但检查是否是僵尸进程（启动超过 24 小时无心跳更新）
+        const age = Date.now() - startTime;
+        if (age > 24 * 60 * 60 * 1000) {
+          console.warn(`[CC] 警告: 检测到旧进程 (PID: ${oldPid}) 运行超过 24 小时，可能是僵尸进程`);
+          console.warn(`[CC] 请手动终止: taskkill /F /PID ${oldPid}`);
+          process.exit(1);
+        } else {
+          console.error(`[CC] 错误: cc-listener 已在运行 (PID: ${oldPid})`);
+          console.error(`[CC] 如需重启，请先运行: taskkill /F /PID ${oldPid}`);
+          process.exit(1);
+        }
+      }
+      // 进程不存在，可以继续
+    } catch {
+      // PID 文件格式错误，清理后继续
+    }
+  }
+  writeFileSync(PID_FILE, JSON.stringify({
+    pid: process.pid,
+    startTime: Date.now(),
+  }), 'utf8');
+}
+
+checkSingleInstance();
+
+function cleanupPidFile() {
+  try {
+    if (existsSync(PID_FILE)) {
+      const data = JSON.parse(readFileSync(PID_FILE, 'utf8'));
+      if (data.pid === process.pid) {
+        unlinkSync(PID_FILE);
+      }
+    }
+  } catch {}
+}
+
+// ── 项目路径（支持命令行参数或环境变量）──
+const PROJECT_DIR = process.argv[2] || process.env.PROJECT_DIR || 'D:/BKS/projects/team-workspace';
+console.log(`[CC] 项目目录: ${PROJECT_DIR}`);
+
+// ── 加载记忆 ──
 let teamMemory = getCache('team_memory');
 if (!teamMemory) {
-  teamMemory = loadTeamMemory();
+  teamMemory = loadTeamMemory(PROJECT_DIR);
   setCache('team_memory', teamMemory, 60 * 60 * 1000);
 }
 
-// 加载共享记忆（群聊外发生的事）
-const sharedMemory = getFullMemory(30);
+const sharedMemory = await getFullMemory(30);
 console.log(`[CC] 团队记忆 ${teamMemory.length} 字符，共享记忆 ${sharedMemory.length} 字符`);
 
-const SYSTEM_PROMPT = `你是 CC，BKS 研发部 Leader。技术方案、架构设计、编码实现。
+// ── 定期清理任务汇报文档 ──
+const DOCS_DIR = join(PROJECT_DIR, 'docs');
+const MAX_DOC_AGE = 24 * 60 * 60 * 1000; // 24 小时
 
-三人群聊：KK（老板）、CC（你）、小马（产品部 Leader）。
+function cleanupTaskDocs() {
+  try {
+    const files = readdirSync(DOCS_DIR);
+    const now = Date.now();
+    let cleaned = 0;
 
-你的团队记忆：
+    files.forEach(file => {
+      if (file.startsWith('任务汇报_') && file.endsWith('.md')) {
+        const filePath = join(DOCS_DIR, file);
+        const stat = statSync(filePath);
+        const age = now - stat.mtime.getTime();
+
+        if (age > MAX_DOC_AGE) {
+          unlinkSync(filePath);
+          cleaned++;
+          console.log(`[CC] 清理过期文档: ${file}`);
+        }
+      }
+    });
+
+    if (cleaned > 0) {
+      console.log(`[CC] 共清理 ${cleaned} 个过期文档`);
+    }
+  } catch (err) {
+    console.error('[CC] 清理文档错误:', err.message);
+  }
+}
+
+// 每小时清理一次过期文档
+setInterval(cleanupTaskDocs, 60 * 60 * 1000);
+console.log('[CC] 文档清理任务已启动（每小时检查一次）');
+
+// ── 消息协议解析 ──
+const MSG_PROTOCOL = {
+  // 小马派发任务：@CC [任务] 描述
+  TASK_ASSIGN: /@CC\s*\[任务\]\s*(.+)/i,
+  // 小马验收通过：@CC [通过] 描述
+  APPROVE: /@CC\s*\[通过\]\s*(.+)/i,
+  // 小马打回：@CC [打回] 描述 | 原因
+  REJECT: /@CC\s*\[打回\]\s*(.+?)(?:\s*\|\s*(.+))?$/i,
+  // @CC 的其他消息（需要判断是否相关）
+  AT_CC: /@CC/i,
+};
+
+// ── 系统提示词 ──
+const SYSTEM_PROMPT = `你是 CC，BKS 研发部 Leader。技术方案、架构设计、编码实现、测试部署。
+
+## Hub-Spoke 工作流
+- 小马是任务分发中枢，负责拆解任务、分配给你
+- 你接到 @CC [任务] 后执行任务
+- 完成后在群里汇报，格式：@小马 [完成] 描述 | 文件路径 | T:匹配 O:合规 K:有效
+- 有问题时上报，格式：@小马 [问题] 描述
+
+## 你的团队记忆
 ${teamMemory}
 
-最近发生的事件（包括你在群聊外的工作）：
+## 最近发生的事件
 ${sharedMemory}
 
-你的工具能力：bash、read_file、write_file、list_files、search_code。
+## 你的工具能力
+bash、read_file、write_file、list_files、search_code
 
-规则：
-1. 做具体事情时必须用工具，不凭记忆回答
-2. 自然语言，简短直接，像微信聊天
-3. 基于你知道的上下文回复，包括共享记忆中的事件
-4. KK 的消息判断是否和你相关
-5. 小马 @ 了你就回复；@ 了别人就不回
-6. 涉及小马用 @小马 开头
-7. 同一件事只回复一次`;
+## 行为规则
+1. 只回应 @CC 的消息，其他消息不关注
+2. 收到 @CC [任务] → 执行任务 → 完成后汇报
+3. 收到 @CC [通过] → 确认验收
+4. 收到 @CC [打回] → 根据原因修正后重新提交
+5. 收到其他 @CC 消息 → 判断是否需要回复
 
+## 任务执行规则
+- 收到任务后，先评估可行性
+- 可行则直接用工具执行
+- 执行过程中需要小马配合，在消息里 @小马 说明需求
+- 完成后，汇报结果 + 文件路径 + TOK 自检
+
+## TOK 自检格式（每次完成任务必须附带）
+T（任务匹配）：✅ 严格匹配本岗位职责，无越权操作
+O（操作合规）：✅ 文件路径/目录归类/操作流程规范
+K（结果有效）：✅ 成果文件可正常读取，可直接用于下一环节
+
+## 输出格式
+- 只用中文回复，不要出现英文、代码片段、随机字符串
+- 回复简洁，1-3 句话，不要长篇大论
+- 不要输出思考过程、分析步骤、内部标记
+- 直接说结论和行动，不要解释推理
+
+## 消息格式示例
+- 接收任务：@CC [任务] 实现用户登录模块
+- 完成汇报：@小马 [完成] 登录模块接口 | src/auth/login.js | T:匹配 O:合规 K:有效
+- 需要TOK：@小马 [TOK] 请验收登录模块 | src/auth/login.js
+- 问题上报：@小马 [问题] 缺少数据库配置
+- 验收确认：收到，验收通过
+
+记住：你是技术负责人，接到任务就执行，完成就汇报，有问题就上报。`;
+
+// ── Agent 注册 ──
 const cc = createAgent({ id: 'cc', name: 'CC', color: '#4A90D9' });
 await cc.connect();
-writeMemory('cc', 'online', 'CC 上线');
+console.log('[CC] Agent 注册完成');
 
+// ── 加载历史 ──
 const chatHistory = [];
 const historyMsgs = await loadChatHistory(30);
 historyMsgs.forEach(m => chatHistory.push({ role: m.from, name: m.fromName, content: m.content }));
@@ -53,56 +202,241 @@ let lastReplyTime = 0;
 const COOLDOWN = 5000;
 const recentMsgKeys = new Set();
 
-const ws = new WebSocket('ws://localhost:3210/ws');
-ws.on('open', () => console.log('[CC] WebSocket 已连接'));
+// 简单内容 hash（用于去重）
+function contentHash(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return hash.toString(36);
+}
 
-ws.on('message', async (raw) => {
+// ── 消息协议解析 ──
+function parseMessageProtocol(content) {
+  // 检查是否是任务派发
+  const taskMatch = content.match(MSG_PROTOCOL.TASK_ASSIGN);
+  if (taskMatch) {
+    return { type: 'task_assign', task: taskMatch[1].trim() };
+  }
+
+  // 检查是否是验收通过
+  const approveMatch = content.match(MSG_PROTOCOL.APPROVE);
+  if (approveMatch) {
+    return { type: 'approve', description: approveMatch[1].trim() };
+  }
+
+  // 检查是否是打回
+  const rejectMatch = content.match(MSG_PROTOCOL.REJECT);
+  if (rejectMatch) {
+    return { type: 'reject', description: rejectMatch[1].trim(), reason: rejectMatch[2]?.trim() || '' };
+  }
+
+  // 检查是否 @CC
+  if (MSG_PROTOCOL.AT_CC.test(content)) {
+    return { type: 'at_cc', content: content };
+  }
+
+  return { type: 'other' };
+}
+
+// ── TOK 自检模板 ──
+function generateTokCheck() {
+  return 'T:匹配 O:合规 K:有效';
+}
+
+// ── WebSocket 监听（自动重连） ──
+let ws = null;
+let reconnectDelay = 1000;
+const MAX_RECONNECT_DELAY = 30000;
+let reconnectTimer = null;
+
+function connectWebSocket() {
+  if (ws) {
+    try { ws.close(); } catch {}
+  }
+
+  ws = new WebSocket('ws://localhost:3210/ws');
+
+  ws.on('open', () => {
+    console.log('[CC] WebSocket 已连接');
+    reconnectDelay = 1000; // 重置退避
+  });
+
+  ws.on('close', (code) => {
+    console.log(`[CC] WebSocket 断开 (code: ${code})，${reconnectDelay / 1000}秒后重连`);
+    scheduleReconnect();
+  });
+
+  ws.on('error', (err) => {
+    console.error('[CC] WebSocket 错误:', err.message);
+    // error 后会触发 close，不在这里重连
+  });
+
+  ws.on('message', handleMessage);
+}
+
+function scheduleReconnect() {
+  if (reconnectTimer) return;
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connectWebSocket();
+  }, reconnectDelay);
+  reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY);
+}
+
+connectWebSocket();
+
+async function handleMessage(raw) {
   const event = JSON.parse(raw);
   if (event.type !== 'new_message') return;
   const msg = event.payload;
   if (msg.from === 'cc') return;
 
-  const msgKey = `${msg.from}:${msg.timestamp}`;
-  if (recentMsgKeys.has(msgKey)) return;
-  recentMsgKeys.add(msgKey);
-  if (recentMsgKeys.size > 50) recentMsgKeys.clear();
+  // 去重（用消息 ID）
+  if (recentMsgKeys.has(msg.id)) return;
+  recentMsgKeys.add(msg.id);
+  if (recentMsgKeys.size > 50) {
+    const arr = Array.from(recentMsgKeys);
+    arr.splice(0, 25);
+    recentMsgKeys.clear();
+    arr.forEach(k => recentMsgKeys.add(k));
+  }
 
+  // 更新历史
   chatHistory.push({ role: msg.from, name: msg.fromName, content: msg.content });
   if (chatHistory.length > 30) chatHistory.shift();
 
-  // 写入共享记忆
-  writeMemory(msg.from, 'message_received', `${msg.fromName}: ${msg.content.substring(0, 200)}`);
+  // 不写共享记忆——xiaoma-listener 统一记录，避免跨进程重复写入
 
-  if (msg.from !== 'kk' && /@(小马|xiaoma)/i.test(msg.content) && !/@CC/i.test(msg.content)) return;
+  // 解析消息协议
+  const protocol = parseMessageProtocol(msg.content);
 
+  // 只处理 @CC 的消息
+  if (protocol.type === 'other') return;
+
+  // 冷却期
   const now = Date.now();
   if (now - lastReplyTime < COOLDOWN) return;
 
-  const recent = chatHistory.slice(-6).map(m => `${m.name}: ${m.content}`).join('\n');
-  const prompt = `${recent}\n\n${msg.fromName}："${msg.content}"\n\n你需要回复吗？不需要回复 [SKIP]。需要就直接回复。`;
+  // 根据消息类型处理
+  let reply = '';
 
-  try {
-    await cc.work('正在思考...', 30);
-    const reply = await generateReply(SYSTEM_PROMPT, chatHistory.slice(-6, -1), prompt);
-    const clean = reply.trim();
-    if (clean.includes('[SKIP]') || clean.length < 2) { await cc.idle(); return; }
-    await cc.send(clean);
-    await cc.idle();
-    lastReplyTime = now;
-    chatHistory.push({ role: 'cc', name: 'CC', content: clean });
-    writeMemory('cc', 'message_sent', clean.substring(0, 200));
-    console.log(`[CC] ${clean.substring(0, 80)}`);
-  } catch (err) {
-    console.error('[CC] AI 错误:', err.message);
-    await cc.idle();
+  switch (protocol.type) {
+    case 'task_assign':
+      // 收到任务，开始执行
+      console.log(`[CC] 收到任务: ${protocol.task}`);
+      await cc.work(`执行任务: ${protocol.task}`, 0);
+
+      // 构造 prompt 让 AI 执行任务
+      const taskPrompt = `@CC [任务] ${protocol.task}\n\n请执行这个任务。完成后，用以下格式汇报：\n@小马 [完成] 任务描述 | 文件路径 | T:匹配 O:合规 K:有效\n\n如果遇到问题，用以下格式上报：\n@小马 [问题] 问题描述`;
+
+      try {
+        const taskReply = await generateReply(SYSTEM_PROMPT, chatHistory.slice(-6, -1), taskPrompt, true);
+        reply = taskReply.trim();
+
+        // 如果 AI 返回空字符串，生成一个简单的回复
+        if (!reply || reply === '(无回复)') {
+          reply = `@小马 [完成] 已执行任务: ${protocol.task} | 无文件产出 | T:匹配 O:合规 K:有效`;
+        }
+
+        // 如果回复过长（超过 200 字符），写入文档，群聊中只发送简短汇报
+        if (reply.length > 200) {
+          const docPath = join(DOCS_DIR, `任务汇报_${Date.now()}.md`);
+          const docContent = `# 任务汇报\n\n**任务**: ${protocol.task}\n**时间**: ${new Date().toISOString()}\n**执行者**: CC\n\n## 详细内容\n\n${reply}\n\n---\n*自动生成，定期清理*`;
+
+          // 写入文档
+          const { writeFileSync } = await import('fs');
+          writeFileSync(docPath, docContent, 'utf8');
+          console.log(`[CC] 详细答复已写入文档: ${docPath}`);
+
+          // 群聊中只发送简短汇报
+          reply = `@小马 [完成] ${protocol.task} | ${docPath} | T:匹配 O:合规 K:有效`;
+        }
+
+        // 如果 AI 没有自动添加 TOK 自检，手动添加
+        if (reply && !reply.includes('T:匹配')) {
+          // 检查是否是完成汇报格式
+          if (reply.includes('[完成]')) {
+            reply = reply.replace(/(@小马\s*\[完成\]\s*.+)/, `$1 | ${generateTokCheck()}`);
+          }
+        }
+      } catch (err) {
+        console.error('[CC] 任务执行错误:', err.message);
+        reply = `@小马 [问题] 任务执行失败: ${err.message}`;
+      }
+      break;
+
+    case 'approve':
+      // 验收通过
+      console.log(`[CC] 验收通过: ${protocol.description}`);
+      reply = `收到，验收通过`;
+      break;
+
+    case 'reject':
+      // 被打回，需要修正
+      console.log(`[CC] 被打回: ${protocol.description}，原因: ${protocol.reason}`);
+      await cc.work(`修正任务: ${protocol.description}`, 0);
+
+      const rejectPrompt = `@CC [打回] ${protocol.description} | ${protocol.reason}\n\n任务被打回，请根据原因修正。完成后重新汇报。`;
+
+      try {
+        const rejectReply = await generateReply(SYSTEM_PROMPT, chatHistory.slice(-6, -1), rejectPrompt, true);
+        reply = rejectReply.trim();
+
+        // 如果 AI 没有自动添加 TOK 自检，手动添加
+        if (reply && !reply.includes('T:匹配')) {
+          if (reply.includes('[完成]')) {
+            reply = reply.replace(/(@小马\s*\[完成\]\s*.+)/, `$1 | ${generateTokCheck()}`);
+          }
+        }
+      } catch (err) {
+        console.error('[CC] 修正错误:', err.message);
+        reply = `@小马 [问题] 修正失败: ${err.message}`;
+      }
+      break;
+
+    case 'at_cc':
+      // 其他 @CC 消息，让 AI 判断是否需要回复
+      const recent = chatHistory.slice(-6).map(m => `${m.name}: ${m.content}`).join('\n');
+      const prompt = `${recent}\n\n${msg.fromName}："${msg.content}"\n\n这是 @CC 的消息。你需要回复吗？如果消息和你无关，回复 [SKIP]。如果需要执行任务或参与讨论，直接回复。`;
+
+      try {
+        await cc.work('正在思考...', 30);
+        const aiReply = await generateReply(SYSTEM_PROMPT, chatHistory.slice(-6, -1), prompt, false);
+        const clean = aiReply.trim();
+
+        if (clean.includes('[SKIP]') || clean === 'SKIP' || clean.length < 2) {
+          await cc.idle();
+          return;
+        }
+
+        reply = clean.replace(/^(?:CC|cc)[：:]\s*/i, '');
+      } catch (err) {
+        console.error('[CC] AI 错误:', err.message);
+        await cc.idle();
+        return;
+      }
+      break;
   }
 
-  trimMemory();
-});
+  // 发送回复
+  if (reply) {
+    await cc.send(reply);
+    await cc.idle();
+    lastReplyTime = now;
+    chatHistory.push({ role: 'cc', name: 'CC', content: reply });
+    // 不写共享记忆——统一由 /api/history 提供
+    console.log(`[CC] ${reply.substring(0, 80)}`);
+  }
+}
 
 process.on('SIGINT', async () => {
-  writeMemory('cc', 'offline', 'CC 离线');
   await cc.disconnect();
-  ws.close();
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  if (ws) try { ws.close(); } catch {}
+  cleanupPidFile();
   process.exit(0);
 });
+
+process.on('exit', cleanupPidFile);

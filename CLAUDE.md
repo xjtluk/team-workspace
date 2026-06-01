@@ -8,6 +8,7 @@ AIGC:
     PropagateID: 791cb3c8963b65894fbf91a10e48b476_efb676f55cbd11f1a4845254007bceed
     ReservedCode2: Oo/yh+LIsXmSZifLude/otrwrj0Re8faxbJJ7sST7t5iyO8fmpWVt4tpQ3QVAK4DDV+8GdQBeTdIWwCLX65y4RIWQGizKk/siOgWq66xE1GmAoTzv9l1FluCqnCdOUtboH5e36bWbOUvrvbxv0TG5ZvSSqZmUQh+cCksgMC8DnHy625SWKpYD2cxeZs=
 ---
+<!-- CC的身份定义在 D:\BKS\team\agents\CC.md，不在本文件中。本文件仅含项目上下文。
 
 # Team Workspace — Project Context
 

@@ -26,15 +26,29 @@ export function useWS() {
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        if (data.type === 'agent:status') {
+
+        // 处理 agent 状态变更
+        if (data.type === 'status_change' && data.payload) {
+          const { agentId, ...statusData } = data.payload;
           setAgents(prev => ({
             ...prev,
-            [data.agent_id]: { ...prev[data.agent_id], ...data }
+            [agentId]: { ...prev[agentId], id: agentId, ...statusData }
           }));
-        } else if (data.type === 'chat:message') {
+        }
+        // 处理 agent 上下线
+        else if (data.type === 'agent_online' && data.payload) {
+          const { agentId, online } = data.payload;
+          setAgents(prev => ({
+            ...prev,
+            [agentId]: { ...prev[agentId], id: agentId, online }
+          }));
+        }
+        // 处理新消息
+        else if (data.type === 'new_message' && data.payload) {
+          const msg = data.payload;
           setMessages(prev => {
-            if (prev.some(m => m.id === data.id)) return prev;
-            return [...prev, data];
+            if (prev.some(m => m.id === msg.id)) return prev;
+            return [...prev, msg];
           });
         }
       } catch (e) {
@@ -100,11 +114,12 @@ export function useWS() {
   // BUG FIX: send via WS with HTTP fallback
   const sendMessage = useCallback((msg) => {
     const payload = {
-      type: 'chat:message',
-      content: msg.content,
-      sender_id: msg.sender_id,
-      sender_name: msg.sender_name,
-      id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+      type: 'send_message',
+      payload: {
+        content: msg.content,
+        from: msg.from || 'kk',
+        fromName: msg.fromName || 'KK'
+      }
     };
 
     // Try WebSocket first
@@ -118,18 +133,25 @@ export function useWS() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        id: payload.id,
-        sender_id: payload.sender_id,
-        sender_name: payload.sender_name,
-        content: payload.content
+        from: msg.from || 'kk',
+        content: msg.content,
+        type: 'text'
       })
     }).then(res => {
       if (res.ok) {
         // Broadcast will come through WS when it reconnects,
         // but add locally for immediate feedback
+        const localMsg = {
+          id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          from: msg.from || 'kk',
+          fromName: msg.fromName || 'KK',
+          content: msg.content,
+          type: 'text',
+          timestamp: Date.now()
+        };
         setMessages(prev => {
-          if (prev.some(m => m.id === payload.id)) return prev;
-          return [...prev, payload];
+          if (prev.some(m => m.id === localMsg.id)) return prev;
+          return [...prev, localMsg];
         });
       }
     }).catch(err => {

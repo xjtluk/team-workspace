@@ -40,6 +40,7 @@ html, body {
 
 .workspace-left {
   flex: 1;
+  max-width: 66.67%;
   min-width: 0;
   border-right: 2px solid var(--bg-tertiary);
   position: relative;

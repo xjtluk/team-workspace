@@ -16,14 +16,18 @@ const ALIGN = {
 
 export function ChatPanel({ messages, agents, onSend }) {
   const listRef = useRef(null);
+  const msgList = messages.value || messages;
 
   // 自动滚动到底部
   useEffect(() => {
     const el = listRef.current;
     if (el) {
-      el.scrollTop = el.scrollHeight;
+      // 使用 requestAnimationFrame 确保 DOM 已更新
+      requestAnimationFrame(() => {
+        el.scrollTop = el.scrollHeight;
+      });
     }
-  }, [messages]);
+  }, [msgList.length]);
 
   const agentList = Object.values(agents.value || agents);
   const offlineAgents = agentList.filter(a => !a.online && a.id !== 'kk');
@@ -38,7 +42,7 @@ export function ChatPanel({ messages, agents, onSend }) {
       </div>
 
       <div class="message-list" ref={listRef}>
-        {(messages.value || messages).map(msg => (
+        {msgList.map(msg => (
           <MessageItem
             key={msg.id}
             message={msg}

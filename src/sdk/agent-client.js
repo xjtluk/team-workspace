@@ -19,7 +19,7 @@
 
 const DEFAULT_OPTIONS = {
   serverUrl: 'http://localhost:3210',
-  heartbeatInterval: 30000,  // 30 秒
+  heartbeatInterval: 15000,  // 15 秒
   agentType: 'agent',
 };
 

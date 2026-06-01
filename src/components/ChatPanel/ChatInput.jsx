@@ -7,7 +7,11 @@ export function ChatInput({ onSend }) {
     e.preventDefault();
     const text = value.trim();
     if (!text) return;
-    onSend(text);
+    onSend({
+      content: text,
+      from: 'kk',
+      fromName: 'KK'
+    });
     setValue('');
   };
 

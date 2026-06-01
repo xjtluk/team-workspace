@@ -1,14 +1,86 @@
 /**
  * AI 回复模块 — 支持工具调用的 Agent 引擎
- * AI 可以执行 Bash、读写文件、搜索代码等操作
+ * 支持 Anthropic API 和 OpenAI 兼容 API（本地模型）
  */
 import { execSync } from 'child_process';
 import { readFileSync, writeFileSync, readdirSync, existsSync, statSync } from 'fs';
 import { join } from 'path';
 
-const BASE_URL = process.env.ANTHROPIC_BASE_URL || 'https://api.xiaomimimo.com/anthropic';
-const API_KEY = process.env.ANTHROPIC_AUTH_TOKEN || '';
-const MODEL = process.env.ANTHROPIC_MODEL || 'mimo-v2.5-pro';
+// 后端配置：anthropic 或 openai
+const BACKEND = process.env.AI_BACKEND || 'anthropic';
+
+// Anthropic 配置
+const ANTHROPIC_BASE_URL = process.env.ANTHROPIC_BASE_URL || 'https://api.xiaomimimo.com/anthropic';
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_AUTH_TOKEN || '';
+const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'mimo-v2.5-pro';
+
+// OpenAI 兼容配置（本地模型）
+const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL || 'http://localhost:8080/v1';
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || 'local';
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'local-model';
+
+// ── 超时与重试工具 ──
+const FETCH_TIMEOUT = 30000; // 30 秒超时
+const MAX_RETRIES = 3;
+const RETRY_ENABLED = process.env.AI_RETRY !== 'false'; // 重试开关，默认开启
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * 带超时的 fetch
+ */
+async function fetchWithTimeout(url, options = {}, timeout = FETCH_TIMEOUT) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') {
+      throw new Error(`Fetch timeout after ${timeout}ms`);
+    }
+    throw err;
+  }
+}
+
+/**
+ * 带重试的 API 调用（指数退避）
+ * 401/403 不重试（认证失败重试无意义）
+ * 5xx/网络错误重试
+ * 环境变量 AI_RETRY=false 可关闭重试
+ */
+async function callWithRetry(fn, maxRetries = MAX_RETRIES) {
+  if (!RETRY_ENABLED) {
+    return fn();
+  }
+
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const isLastAttempt = i === maxRetries - 1;
+      const isAuthError = err.message.includes('401') || err.message.includes('403');
+
+      // 认证错误或最后一次尝试，直接抛出
+      if (isAuthError || isLastAttempt) {
+        throw err;
+      }
+
+      // 指数退避：1s, 2s, 4s...
+      const delay = Math.min(1000 * Math.pow(2, i), 10000);
+      console.log(`[AI] 请求失败，${delay}ms 后重试 (${i + 1}/${maxRetries}): ${err.message}`);
+      await sleep(delay);
+    }
+  }
+}
 
 // 工具定义
 const TOOLS = [
@@ -73,6 +145,153 @@ const TOOLS = [
   },
 ];
 
+// OpenAI 兼容 API 调用（本地模型）
+async function callOpenAI(systemPrompt, messages, useTools) {
+  const body = {
+    model: OPENAI_MODEL,
+    max_tokens: useTools ? 4096 : 2048,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      ...messages,
+    ],
+  };
+
+  // 如果使用工具，添加工具定义（OpenAI 格式）
+  if (useTools) {
+    body.tools = TOOLS.map(t => ({
+      type: 'function',
+      function: {
+        name: t.name,
+        description: t.description,
+        parameters: t.input_schema,
+      },
+    }));
+  }
+
+  const response = await fetchWithTimeout(`${OPENAI_BASE_URL}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${OPENAI_API_KEY}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`OpenAI API error: ${response.status} ${err}`);
+  }
+
+  const data = await response.json();
+  const choice = data.choices?.[0];
+  if (!choice) return '';
+
+  // 检查是否有工具调用
+  if (choice.message?.tool_calls?.length > 0) {
+    return {
+      type: 'tool_calls',
+      toolCalls: choice.message.tool_calls.map(tc => ({
+        id: tc.id,
+        name: tc.function.name,
+        input: JSON.parse(tc.function.arguments),
+      })),
+      text: choice.message.content || '',
+    };
+  }
+
+  return { type: 'text', text: choice.message?.content || '' };
+}
+
+// 解析 XML 格式的工具调用
+function parseXmlToolCalls(text) {
+  const calls = [];
+  const regex = /<tool_call>\s*<function=(\w+)>([\s\S]*?)<\/function>\s*<\/tool_call>/g;
+  let match;
+  let callId = 0;
+
+  while ((match = regex.exec(text)) !== null) {
+    const funcName = match[1];
+    const paramsStr = match[2];
+    const params = {};
+
+    // 解析参数
+    const paramRegex = /<parameter=(\w+)>([\s\S]*?)<\/parameter>/g;
+    let paramMatch;
+    while ((paramMatch = paramRegex.exec(paramsStr)) !== null) {
+      params[paramMatch[1]] = paramMatch[2].trim();
+    }
+
+    calls.push({
+      id: `xml_call_${callId++}`,
+      name: funcName,
+      input: params,
+    });
+  }
+
+  return calls;
+}
+
+// Anthropic API 调用
+async function callAnthropic(systemPrompt, messages, useTools) {
+  const body = {
+    model: ANTHROPIC_MODEL,
+    max_tokens: useTools ? 4096 : 2048,
+    system: systemPrompt,
+    messages,
+  };
+
+  if (useTools) {
+    body.tools = TOOLS;
+  }
+
+  const response = await fetchWithTimeout(`${ANTHROPIC_BASE_URL}/v1/messages`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Anthropic API error: ${response.status} ${err}`);
+  }
+
+  const data = await response.json();
+  const content = data.content || [];
+
+  const toolUses = content.filter(b => b.type === 'tool_use');
+  const textBlocks = content.filter(b => b.type === 'text');
+
+  // 检查标准格式的工具调用
+  if (toolUses.length > 0) {
+    return {
+      type: 'tool_calls',
+      toolCalls: toolUses.map(t => ({
+        id: t.id,
+        name: t.name,
+        input: t.input,
+      })),
+      text: textBlocks.map(b => b.text).join('\n'),
+    };
+  }
+
+  // 检查 XML 格式的工具调用（兼容某些 API 代理）
+  const fullText = textBlocks.map(b => b.text).join('\n');
+  const xmlToolCalls = parseXmlToolCalls(fullText);
+  if (xmlToolCalls.length > 0) {
+    return {
+      type: 'tool_calls',
+      toolCalls: xmlToolCalls,
+      text: '',
+    };
+  }
+
+  return { type: 'text', text: fullText || '' };
+}
+
 // 执行工具
 function executeTool(name, input) {
   const cwd = input.cwd || 'D:/BKS/projects/team-workspace';
@@ -121,8 +340,22 @@ function executeTool(name, input) {
 
 /**
  * 生成 AI 回复（支持工具调用循环）
+ * @param {string} systemPrompt - 系统提示词
+ * @param {Array} history - 历史消息
+ * @param {string} userMessage - 用户消息
+ * @param {boolean} useTools - 是否启用工具（默认 true）
  */
-export async function generateReply(systemPrompt, history, userMessage) {
+export async function generateReply(systemPrompt, history, userMessage, useTools = true) {
+  // 整体超时保护（120 秒）
+  const TASK_TIMEOUT = 120000;
+  const taskPromise = _generateReply(systemPrompt, history, userMessage, useTools);
+  const timeoutPromise = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('任务超时 (120s)')), TASK_TIMEOUT)
+  );
+  return Promise.race([taskPromise, timeoutPromise]);
+}
+
+async function _generateReply(systemPrompt, history, userMessage, useTools) {
   const messages = [];
 
   // 加入历史
@@ -136,59 +369,83 @@ export async function generateReply(systemPrompt, history, userMessage) {
 
   messages.push({ role: 'user', content: userMessage });
 
+  // 选择后端
+  const callAPI = BACKEND === 'openai' ? callOpenAI : callAnthropic;
+
+  // 如果不使用工具，直接返回文本回复
+  if (!useTools) {
+    const result = await callWithRetry(() => callAPI(systemPrompt, messages, false));
+    return result.text || '';
+  }
+
   // 工具调用循环（最多 5 轮）
-  for (let i = 0; i < 5; i++) {
-    const response = await fetch(`${BASE_URL}/v1/messages`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': API_KEY,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        max_tokens: 4096,
-        system: systemPrompt,
-        messages,
-        tools: TOOLS,
-      }),
-    });
+  const maxIterations = 5;
+  for (let i = 0; i < maxIterations; i++) {
+    const result = await callWithRetry(() => callAPI(systemPrompt, messages, true));
 
-    if (!response.ok) {
-      const err = await response.text();
-      throw new Error(`AI API error: ${response.status} ${err}`);
-    }
-
-    const data = await response.json();
-    const content = data.content || [];
-
-    // 检查是否有工具调用
-    const toolUses = content.filter(b => b.type === 'tool_use');
-    const textBlocks = content.filter(b => b.type === 'text');
-
-    if (toolUses.length === 0) {
-      // 没有工具调用，返回文本
-      return textBlocks.map(b => b.text).join('\n') || '(无回复)';
+    if (result.type === 'text') {
+      return result.text || '';
     }
 
     // 有工具调用 → 执行 → 返回结果继续对话
-    const assistantContent = content;
-    messages.push({ role: 'assistant', content: assistantContent });
+    if (result.type === 'tool_calls') {
+      // 添加 assistant 消息（包含工具调用）
+      if (BACKEND === 'openai') {
+        messages.push({
+          role: 'assistant',
+          content: result.text || null,
+          tool_calls: result.toolCalls.map(tc => ({
+            id: tc.id,
+            type: 'function',
+            function: {
+              name: tc.name,
+              arguments: JSON.stringify(tc.input),
+            },
+          })),
+        });
+      } else {
+        // Anthropic 格式
+        const assistantContent = [];
+        if (result.text) assistantContent.push({ type: 'text', text: result.text });
+        result.toolCalls.forEach(tc => {
+          assistantContent.push({ type: 'tool_use', id: tc.id, name: tc.name, input: tc.input });
+        });
+        messages.push({ role: 'assistant', content: assistantContent });
+      }
 
-    const toolResults = [];
-    for (const toolUse of toolUses) {
-      console.log(`[工具] ${toolUse.name}(${JSON.stringify(toolUse.input).substring(0, 80)})`);
-      const result = executeTool(toolUse.name, toolUse.input);
-      console.log(`[结果] ${result.substring(0, 100)}`);
-      toolResults.push({
-        type: 'tool_result',
-        tool_use_id: toolUse.id,
-        content: result,
-      });
+      // 执行工具并收集结果
+      const toolResults = [];
+      for (const tc of result.toolCalls) {
+        console.log(`[工具] ${tc.name}(${JSON.stringify(tc.input).substring(0, 80)})`);
+        const toolResult = executeTool(tc.name, tc.input);
+        console.log(`[结果] ${toolResult.substring(0, 100)}`);
+
+        if (BACKEND === 'openai') {
+          toolResults.push({
+            role: 'tool',
+            tool_call_id: tc.id,
+            content: toolResult,
+          });
+        } else {
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: tc.id,
+            content: toolResult,
+          });
+        }
+      }
+
+      // 添加工具结果到消息
+      if (BACKEND === 'openai') {
+        messages.push(...toolResults);
+      } else {
+        messages.push({ role: 'user', content: toolResults });
+      }
     }
-
-    messages.push({ role: 'user', content: toolResults });
   }
 
-  return '(工具调用轮次已达上限)';
+  // 工具调用轮次已达上限，让 AI 基于已收集的信息生成回复
+  console.log(`[AI] 工具调用轮次已达上限 (5次)，基于已收集信息生成回复`);
+  const finalResult = await callWithRetry(() => callAPI(systemPrompt, messages, false));
+  return finalResult.text || '';
 }

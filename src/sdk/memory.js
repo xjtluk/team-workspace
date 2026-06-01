@@ -1,18 +1,23 @@
 /**
  * Agent 记忆模块
  * 从团队资源中加载上下文，让 Agent 知道"我们是谁、在做什么、聊过什么"
+ *
+ * 设计：
+ *   - 团队记忆（TEAM_DIR）：身份层，始终从 D:\BKS\team\ 加载
+ *   - 项目上下文（projectDir）：项目层，启动时传入，默认 team-workspace
  */
 import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 
 const TEAM_DIR = 'D:/BKS/team';
-const PROJECT_DIR = 'D:/BKS/projects/team-workspace';
 
 /**
  * 加载团队记忆
+ * @param {string} projectDir — 项目目录路径（可选，默认 team-workspace）
  * @returns {string} 格式化的上下文文本
  */
-export function loadTeamMemory() {
+export function loadTeamMemory(projectDir) {
+  const PROJECT_DIR = projectDir || 'D:/BKS/projects/team-workspace';
   const parts = [];
 
   // 1. 通信记录 — CC 和小马的全部往来
