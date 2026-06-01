@@ -34,21 +34,22 @@ html, body {
 
 .workspace {
   display: flex;
+  width: 100%;
   height: 100%;
   position: relative;
 }
 
 .workspace-left {
-  flex: 1;
-  max-width: 66.67%;
+  flex: 2;
   min-width: 0;
   border-right: 2px solid var(--bg-tertiary);
   position: relative;
 }
 
 .workspace-right {
-  width: 380px;
+  flex: 1;
   min-width: 300px;
+  max-width: 420px;
   display: flex;
   flex-direction: column;
 }

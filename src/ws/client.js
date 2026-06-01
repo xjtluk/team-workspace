@@ -89,17 +89,21 @@ export function useWS() {
         }
       }
 
-      if (initialData.agents?.length) {
+      // 加载 agents
+      const agentsList = initialData.agents;
+      if (agentsList?.length) {
         setAgents(prev => {
           const map = { ...prev };
-          initialData.agents.forEach(a => { map[a.id] = a; });
+          agentsList.forEach(a => { map[a.id] = a; });
           return map;
         });
       }
 
-      // BUG FIX: load initial messages into state (was previously ignored)
-      if (initialData.messages?.length) {
-        setMessages(initialData.messages);
+      // 加载历史消息 — API 返回 { messages: [...], hasMore: true }
+      const msgsData = initialData.messages;
+      const msgsList = msgsData?.messages || msgsData;
+      if (Array.isArray(msgsList) && msgsList.length) {
+        setMessages(msgsList);
       }
     };
 
