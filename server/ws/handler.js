@@ -103,9 +103,9 @@ function handleMessage(ws, msg) {
 
 function handleSendMessage(ws, payload) {
   const now = Date.now();
+  const senderId = payload.from || 'kk';
   const rand = Math.random().toString(36).substring(2, 8);
   const messageId = `msg_${now}_${senderId}_${rand}`;
-  const senderId = payload.from || 'kk';
 
   // 去重检查
   if (isDuplicate(payload.content, senderId)) {
