@@ -315,9 +315,10 @@ async function handleMessage(raw) {
   // 只处理 @CC 的消息
   if (protocol.type === 'other') return;
 
-  // 冷却期
+  // 冷却期（立即更新时间戳，防止并发消息穿透）
   const now = Date.now();
   if (now - lastReplyTime < COOLDOWN) return;
+  lastReplyTime = now;
 
   // 根据消息类型处理
   let reply = '';
@@ -424,7 +425,6 @@ async function handleMessage(raw) {
   if (reply) {
     await cc.send(reply);
     await cc.idle();
-    lastReplyTime = now;
     chatHistory.push({ role: 'cc', name: 'CC', content: reply });
     // 不写共享记忆——统一由 /api/history 提供
     console.log(`[CC] ${reply.substring(0, 80)}`);

@@ -9,7 +9,9 @@ marked.setOptions({
 
 function renderMarkdown(text) {
   try {
-    const html = marked.parse(text);
+    // 去除首尾空白和多余换行，避免渲染出多余空行
+    const cleaned = text.replace(/\n+$/, '').replace(/^\n+/, '');
+    const html = marked.parse(cleaned);
     return DOMPurify.sanitize(html);
   } catch {
     return text;
