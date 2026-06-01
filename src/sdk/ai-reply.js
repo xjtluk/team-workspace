@@ -202,32 +202,67 @@ async function callOpenAI(systemPrompt, messages, useTools) {
   return { type: 'text', text: choice.message?.content || '' };
 }
 
-// 解析 XML 格式的工具调用
+// 解析工具调用（支持多种格式）
+// 格式A: <tool_call>{"name":"bash","arguments":{...}}</tool_call>
+// 格式B: <tool_call>\n<function=bash>\n<parameter=command>echo hello
+
+
+// 解析工具调用（支持多种格式）
 function parseXmlToolCalls(text) {
   const calls = [];
-  const regex = /<tool_call>\s*<function=(\w+)>([\s\S]*?)<\/function>\s*<\/tool_call>/g;
-  let match;
   let callId = 0;
+  const oc = String.fromCharCode(60);
+  const cc = String.fromCharCode(62);
+  const openTag = oc + 'tool_call' + cc;
+  const closeTag = oc + '/tool_call' + cc;
 
-  while ((match = regex.exec(text)) !== null) {
-    const funcName = match[1];
-    const paramsStr = match[2];
-    const params = {};
+  let pos = 0;
+  while (pos < text.length) {
+    const start = text.indexOf(openTag, pos);
+    if (start === -1) break;
+    const end = text.indexOf(closeTag, start);
+    if (end === -1) break;
+    const block = text.substring(start + openTag.length, end).trim();
+    pos = end + closeTag.length;
 
-    // 解析参数
-    const paramRegex = /<parameter=(\w+)>([\s\S]*?)<\/parameter>/g;
-    let paramMatch;
-    while ((paramMatch = paramRegex.exec(paramsStr)) !== null) {
-      params[paramMatch[1]] = paramMatch[2].trim();
+    // Format A: JSON
+    try {
+      const data = JSON.parse(block);
+      if (data.name && data.arguments) {
+        calls.push({ id: 'xml_' + callId++, name: data.name, input: data.arguments });
+        continue;
+      }
+    } catch {}
+
+    // Format B: function=xxx with parameter=yyy
+    const fOpen = oc + 'function=';
+    const fClose = oc + '/function' + cc;
+    const fIdx = block.indexOf(fOpen);
+    if (fIdx !== -1) {
+      const fEnd = block.indexOf(cc, fIdx);
+      const funcName = block.substring(fIdx + fOpen.length, fEnd).trim();
+      const fCloseIdx = block.indexOf(fClose, fEnd);
+      if (fCloseIdx !== -1) {
+        const inner = block.substring(fEnd + 1, fCloseIdx);
+        const params = {};
+        const pOpen = oc + 'parameter=';
+        const pClose = oc + '/parameter' + cc;
+        let pPos = 0;
+        while (pPos < inner.length) {
+          const pStart = inner.indexOf(pOpen, pPos);
+          if (pStart === -1) break;
+          const pTagEnd = inner.indexOf(cc, pStart);
+          const key = inner.substring(pStart + pOpen.length, pTagEnd).trim();
+          const pEnd = inner.indexOf(pClose, pTagEnd);
+          if (pEnd === -1) break;
+          const val = inner.substring(pTagEnd + 1, pEnd).trim();
+          params[key] = val;
+          pPos = pEnd + pClose.length;
+        }
+        calls.push({ id: 'xml_' + callId++, name: funcName, input: params });
+      }
     }
-
-    calls.push({
-      id: `xml_call_${callId++}`,
-      name: funcName,
-      input: params,
-    });
   }
-
   return calls;
 }
 
