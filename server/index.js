@@ -10,6 +10,7 @@ import messageRouter from './routes/message.js';
 import heartbeatRouter, { startHeartbeatMonitor } from './routes/heartbeat.js';
 import registerRouter from './routes/register.js';
 import historyRouter from './routes/history.js';
+import agentsRouter from './routes/agents.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3210;
@@ -32,6 +33,7 @@ async function start() {
   app.use('/api/heartbeat', heartbeatRouter);
   app.use('/api/register', registerRouter);
   app.use('/api/history', historyRouter);
+  app.use('/api/agents', agentsRouter);
 
   // WebSocket
   const wss = new WebSocketServer({ server, path: '/ws' });
