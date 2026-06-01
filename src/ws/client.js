@@ -70,40 +70,32 @@ export function useWS() {
   useEffect(() => {
     connect();
 
-    // Load initial state (SSR-injected or fallback to API)
+    // 加载初始数据：agents + 历史消息
     const loadInitial = async () => {
-      let initialData = window.__INITIAL_STATE__;
+      try {
+        const [agentsRes, historyRes] = await Promise.all([
+          fetch('/api/agents'),
+          fetch('/api/history?limit=50')
+        ]);
+        const agentsData = await agentsRes.json();
+        const historyData = await historyRes.json();
 
-      if (!initialData) {
-        try {
-          const [agentsRes, msgsRes] = await Promise.all([
-            fetch('/api/agents'),
-            fetch('/api/history?limit=50')
-          ]);
-          const agentsList = await agentsRes.json();
-          const msgsList = await msgsRes.json();
-          initialData = { agents: agentsList, messages: msgsList };
-        } catch (e) {
-          console.error('Failed to load initial state:', e);
-          return;
+        // 加载 agents
+        if (Array.isArray(agentsData) && agentsData.length) {
+          setAgents(prev => {
+            const map = { ...prev };
+            agentsData.forEach(a => { map[a.id] = a; });
+            return map;
+          });
         }
-      }
 
-      // 加载 agents
-      const agentsList = initialData.agents;
-      if (agentsList?.length) {
-        setAgents(prev => {
-          const map = { ...prev };
-          agentsList.forEach(a => { map[a.id] = a; });
-          return map;
-        });
-      }
-
-      // 加载历史消息 — API 返回 { messages: [...], hasMore: true }
-      const msgsData = initialData.messages;
-      const msgsList = msgsData?.messages || msgsData;
-      if (Array.isArray(msgsList) && msgsList.length) {
-        setMessages(msgsList);
+        // 加载历史消息 — API 返回 { messages: [...], hasMore: true }
+        const historyMsgs = historyData?.messages;
+        if (Array.isArray(historyMsgs) && historyMsgs.length) {
+          setMessages(historyMsgs);
+        }
+      } catch (e) {
+        console.error('Failed to load initial state:', e);
       }
     };
 
