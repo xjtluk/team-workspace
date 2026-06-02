@@ -198,7 +198,11 @@ async function handleMessage(raw) {
 
   try {
     // 加载聊天历史
-    const chatHistory = await loadChatHistory(50);
+    const chatHistory = (await loadChatHistory(50)) || [];
+    if (!Array.isArray(chatHistory)) {
+      console.error('[CX] chatHistory 不是数组，已重置为空数组');
+      chatHistory = [];
+    }
 
     // 构建 prompt
     let prompt = '';
