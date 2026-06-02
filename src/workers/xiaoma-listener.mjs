@@ -311,6 +311,15 @@ let ws = null;
 let reconnectDelay = 1000;
 const MAX_RECONNECT_DELAY = 30000;
 let reconnectTimer = null;
+let lastMessageTime = Date.now();
+
+// 应用层心跳看门狗：90 秒无消息则强制重连
+setInterval(() => {
+  if (ws && ws.readyState === ws.OPEN && Date.now() - lastMessageTime > 90000) {
+    console.warn('[小马] WebSocket 假死（90秒无消息），强制重连');
+    try { ws.terminate(); } catch {}
+  }
+}, 30000);
 
 async function connectWebSocket() {
   if (ws) {
@@ -333,6 +342,7 @@ async function connectWebSocket() {
   ws.on('open', async () => {
     console.log('[小马] WebSocket 已连接');
     reconnectDelay = 1000; // 重置退避
+    lastMessageTime = Date.now(); // 重置心跳时间
     // 启动 Marvis 状态兜底轮询（3s 间隔）
     if (marvisCheckTimer) clearInterval(marvisCheckTimer);
     marvisCheckTimer = setInterval(pollMarvisStatus, 3000);
@@ -354,7 +364,14 @@ async function connectWebSocket() {
     console.error('[小马] WebSocket 错误:', err.message);
   });
 
-  ws.on('message', handleMessage);
+  ws.on('pong', () => {
+    lastMessageTime = Date.now(); // 收到 pong，连接正常
+  });
+
+  ws.on('message', (data) => {
+    lastMessageTime = Date.now();
+    handleMessage(data);
+  });
 }
 
 function scheduleReconnect() {
