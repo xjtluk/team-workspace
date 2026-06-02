@@ -1,12 +1,13 @@
 /**
  * 小马 Agent — 群聊模式（共享记忆版）
+ * v2: Marvis 即时检测 + AI代理标记
  */
-import { createAgent } from '../agent-client.js';
-import { generateReply } from '../ai-reply.js';
-import { loadTeamMemory, loadChatHistory } from '../memory.js';
-import { setCache, getCache } from '../cache.js';
-import { getFullMemory } from '../shared-memory.js';
-import { validateEncoding } from '../encoding.js';
+import { createAgent } from '../sdk/agent-client.js';
+import { generateReply } from '../sdk/ai-reply.js';
+import { loadTeamMemory, loadChatHistory } from '../sdk/memory.js';
+import { setCache, getCache } from '../sdk/cache.js';
+import { getFullMemory } from '../sdk/shared-memory.js';
+import { validateEncoding } from '../sdk/encoding.js';
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import WebSocket from 'ws';
@@ -97,16 +98,99 @@ const historyMsgs = await loadChatHistory(30);
 historyMsgs.forEach(m => chatHistory.push({ role: m.from, name: m.fromName, content: m.content }));
 console.log(`[小马] 加载了 ${historyMsgs.length} 条历史消息`);
 
+// 用最后一条历史消息的时间戳初始化，避免重复拉取已知消息
+let lastMessageTimestamp = historyMsgs.length > 0
+  ? Math.max(...historyMsgs.map(m => m.timestamp || 0))
+  : Date.now();
+
 let lastReplyTime = 0;
 const COOLDOWN = 5000;
+let isProcessing = false;
+const pendingMessages = [];
 const recentMsgKeys = new Set();
+
+// ── Marvis 在线检测（即时版）──
+// 双层检测机制：
+//   1. WS 事件推送 → 即时感知上线/离线（< 1s）
+//   2. HTTP 轮询 → 兜底检测（3s 间隔）
+const MARVIS_TIMEOUT = 15000;  // ↓ 从 30s 降到 15s
+let marvisLastSeen = 0;
+let marvisOnline = false;      // 当前状态（被 WS 事件即时更新）
+let marvisCheckTimer = null;
+
+// 通过 WS 收到的 agent_online/agent_offline 即时更新
+function onMarvisStatusChange(agentId, online, lastSeen) {
+  if (agentId !== 'xiaoma') return;
+  const wasOnline = marvisOnline;
+  marvisOnline = online;
+  if (lastSeen) marvisLastSeen = lastSeen;
+  if (wasOnline !== online) {
+    console.log(`[小马] Marvis ${online ? '上线' : '离线'} (WS 即时通知)`);
+  }
+}
+
+// HTTP 兜底轮询（3s 间隔）
+async function pollMarvisStatus() {
+  try {
+    const res = await fetch('http://127.0.0.1:3210/api/agents/marvis/status');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.lastSeen) marvisLastSeen = data.lastSeen;
+      const shouldBeOnline = data.online && (Date.now() - data.lastSeen) < MARVIS_TIMEOUT;
+      if (shouldBeOnline !== marvisOnline) {
+        marvisOnline = shouldBeOnline;
+        console.log(`[小马] Marvis ${marvisOnline ? '上线' : '离线'} (HTTP 兜底检测)`);
+      }
+    }
+  } catch {
+    // 静默失败，下次轮询再试
+  }
+}
+
+function isMarvisOnline() {
+  return marvisOnline;
+}
 
 // ── 消息处理 ──
 async function handleMessage(raw) {
+  // 先检查是否是 agent 状态更新（WS 事件）
+  try {
+    const event = JSON.parse(raw);
+    if (event.type === 'agent_online' && event.payload) {
+      onMarvisStatusChange(event.payload.agentId, true, Date.now());
+    }
+    if (event.type === 'agent_offline' && event.payload) {
+      onMarvisStatusChange(event.payload.agentId, false, Date.now());
+    }
+    if (event.type !== 'new_message') return;
+  } catch {
+    return;
+  }
+
   const event = JSON.parse(raw);
   if (event.type !== 'new_message') return;
   const msg = event.payload;
   if (msg.from === 'xiaoma') return;
+
+  // Marvis 在线时，Listener 静默（不自动回复）
+  if (isMarvisOnline()) {
+    if (!xiaoma._marvisLogged) {
+      console.log('[小马] Marvis 在线，Listener 静默中（只记录不回复）');
+      xiaoma._marvisLogged = true;
+    }
+    chatHistory.push({ role: msg.from, name: msg.fromName, content: msg.content });
+    if (chatHistory.length > 30) chatHistory.shift();
+    // 更新最后消息时间戳（补拉用）
+    if (msg.timestamp && msg.timestamp > lastMessageTimestamp) {
+      lastMessageTimestamp = msg.timestamp;
+    }
+    return;
+  } else {
+    if (xiaoma._marvisLogged) {
+      console.log('[小马] Marvis 离线，Listener 恢复 AI 代理模式');
+      xiaoma._marvisLogged = false;
+    }
+  }
 
   // 去重（用消息 ID）
   if (recentMsgKeys.has(msg.id)) return;
@@ -121,16 +205,30 @@ async function handleMessage(raw) {
   chatHistory.push({ role: msg.from, name: msg.fromName, content: msg.content });
   if (chatHistory.length > 30) chatHistory.shift();
 
-  // KK 的消息无条件处理；agent 之间需要 @小马 才处理
+  // 更新最后消息时间戳（补拉用）
+  if (msg.timestamp && msg.timestamp > lastMessageTimestamp) {
+    lastMessageTimestamp = msg.timestamp;
+  }
+
+  // KK 的消息无条件处理
   const isFromHuman = msg.from === 'kk';
-  if (!isFromHuman && /@CC/i.test(msg.content) && !/@(小马|xiaoma)/i.test(msg.content)) return;
-  if (!isFromHuman && !/@(小马|xiaoma)/i.test(msg.content) && !/@CC/i.test(msg.content)) return;
+  // CC 给 KK 的汇报也处理（团队协作闭环）
+  const isCCReportToKK = msg.from === 'cc' && /@KK/i.test(msg.content);
+  // agent 之间需要 @小马 或 CC 向 KK 汇报时才处理
+  if (!isFromHuman && !isCCReportToKK && !/@(小马|xiaoma)/i.test(msg.content)) return;
 
   const now = Date.now();
   if (now - lastReplyTime < COOLDOWN) return;
 
+  // 并发保护：正在处理时排队
+  if (isProcessing) {
+    pendingMessages.push(msg);
+    return;
+  }
+  isProcessing = true;
+
   const recent = chatHistory.slice(-6).map(m => `${m.name}: ${m.content}`).join('\n');
-  const prompt = `${recent}\n\n${msg.fromName}："${msg.content}"\n\n你需要回复吗？如果消息和你无关，回复 [SKIP]。如果需要执行任务或参与讨论，直接回复。`;
+  const prompt = `${recent}\n\n${msg.fromName}："${msg.content}"\n\n你需要回复吗？如果消息和你无关，回复 [SKIP]。如果需要执行任务或参与讨论，直接回复。\n\n重要：如果消息 @了你，你必须回复，不要 SKIP。如果是 CC 给你汇报工作或请你评价，你必须给出评价。`;
 
   // 判断是否需要工具：必须是明确的执行指令，不是讨论
   const needsTool = /(?:帮我(?:写|创建|修改|删除|安装|部署|执行|运行|查看|读取|搜索|查找)|(?:执行|运行|部署|安装)(?:一下|命令|脚本|测试)|(?:写|创建|修改|删除)(?:一个|这个|文件|代码|脚本|配置))/i.test(msg.content);
@@ -138,12 +236,16 @@ async function handleMessage(raw) {
   try {
     await xiaoma.work('正在思考...', 30);
     const reply = await generateReply(SYSTEM_PROMPT, chatHistory.slice(-6, -1), prompt, needsTool);
+    await xiaoma.work('正在回复...', 80);
     const clean = reply.trim();
-    if (clean.includes('[SKIP]') || clean === 'SKIP' || clean.length < 2 || clean.includes('工具调用轮次已达上限')) { await xiaoma.idle(); return; }
+    if (clean.includes('[SKIP]') || clean === 'SKIP' || clean.length < 2 || clean.includes('工具调用轮次已达上限')) {
+      console.log(`[小马] 跳过回复: ${msg.fromName}: ${msg.content.substring(0, 50)}`);
+      await xiaoma.idle();
+      return;
+    }
 
     // 检查是否标记为需要真实小马处理
     if (clean.includes('[需要小马处理]') || clean.includes('需要小马处理')) {
-      // 在群聊里直接通知，KK 看到后会唤醒 Marvis
       await xiaoma.send(`@小马 需要处理: ${msg.content.substring(0, 100)}`);
       await xiaoma.idle();
       return;
@@ -159,20 +261,29 @@ async function handleMessage(raw) {
       return;
     }
 
-    await xiaoma.send(safeText);
+    // ── AI 代理标记 ──
+    // 如果不是 Marvis 真人在操作，标记为 [AI代理]
+    const agentReply = isMarvisOnline() ? safeText : `[AI代理] ${safeText}`;
+
+    await xiaoma.send(agentReply);
     await xiaoma.idle();
     lastReplyTime = now;
-    chatHistory.push({ role: 'xiaoma', name: '小马', content: safeText });
-    console.log(`[小马] ${safeText.substring(0, 80)}`);
+    chatHistory.push({ role: 'xiaoma', name: '小马', content: agentReply });
+    console.log(`[小马] ${agentReply.substring(0, 80)}`);
   } catch (err) {
     console.error('[小马] AI 错误:', err.message);
     await xiaoma.idle();
+  } finally {
+    isProcessing = false;
+    // 处理排队的消息（FIFO）
+    if (pendingMessages.length > 0) {
+      const nextMsg = pendingMessages.shift();
+      handleMessage(JSON.stringify({ type: 'new_message', payload: nextMsg }));
+    }
   }
 }
 
 // ── 补拉断开期间的消息 ──
-let lastMessageTimestamp = Date.now();
-
 async function fetchMissedMessages() {
   try {
     const response = await fetch(`http://127.0.0.1:3210/api/history?since=${lastMessageTimestamp}&limit=50`);
@@ -222,18 +333,25 @@ async function connectWebSocket() {
   ws.on('open', async () => {
     console.log('[小马] WebSocket 已连接');
     reconnectDelay = 1000; // 重置退避
+    // 启动 Marvis 状态兜底轮询（3s 间隔）
+    if (marvisCheckTimer) clearInterval(marvisCheckTimer);
+    marvisCheckTimer = setInterval(pollMarvisStatus, 3000);
+    pollMarvisStatus(); // 立即执行一次
     // 重连后补拉断开期间的消息
     await fetchMissedMessages();
   });
 
   ws.on('close', (code) => {
     console.log(`[小马] WebSocket 断开 (code: ${code})，${reconnectDelay / 1000}秒后重连`);
+    if (marvisCheckTimer) {
+      clearInterval(marvisCheckTimer);
+      marvisCheckTimer = null;
+    }
     scheduleReconnect();
   });
 
   ws.on('error', (err) => {
     console.error('[小马] WebSocket 错误:', err.message);
-    // error 后会触发 close，不在这里重连
   });
 
   ws.on('message', handleMessage);
@@ -250,14 +368,8 @@ function scheduleReconnect() {
 
 connectWebSocket();
 
-// 更新最后消息时间戳
-function updateLastTimestamp(ts) {
-  if (ts && ts > lastMessageTimestamp) {
-    lastMessageTimestamp = ts;
-  }
-}
-
 process.on('SIGINT', async () => {
+  if (marvisCheckTimer) clearInterval(marvisCheckTimer);
   await xiaoma.disconnect();
   if (reconnectTimer) clearTimeout(reconnectTimer);
   if (ws) try { ws.close(); } catch {}
@@ -266,5 +378,6 @@ process.on('SIGINT', async () => {
 });
 
 process.on('exit', () => {
+  if (marvisCheckTimer) clearInterval(marvisCheckTimer);
   try { unlinkSync(PID_FILE); } catch {}
 });

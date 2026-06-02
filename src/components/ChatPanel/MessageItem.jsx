@@ -1,7 +1,7 @@
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
+import { MSG_STATUS } from '../../ws/client.js';
 
-// 配置 marked — 轻量 Markdown
 marked.setOptions({
   breaks: true,
   gfm: true,
@@ -9,7 +9,6 @@ marked.setOptions({
 
 function renderMarkdown(text) {
   try {
-    // 去除首尾空白和多余换行，避免渲染出多余空行
     const cleaned = text.replace(/\n+$/, '').replace(/^\n+/, '');
     const html = marked.parse(cleaned);
     return DOMPurify.sanitize(html);
@@ -18,7 +17,16 @@ function renderMarkdown(text) {
   }
 }
 
-export function MessageItem({ message, avatar, align, isGold }) {
+// 消息状态图标和标签（视觉增强版 — 更直观的区分）
+const STATUS_ICONS = {
+  [MSG_STATUS.SENDING]:   { icon: '\u23F3', label: '\u53D1\u9001\u4E2D', cls: 'status-sending' },
+  [MSG_STATUS.SENT]:      { icon: '\u2713', label: '\u5DF2\u53D1\u9001', cls: 'status-sent' },
+  [MSG_STATUS.DELIVERED]: { icon: '\u2713\u2713', label: '\u5DF2\u9001\u8FBE', cls: 'status-delivered' },
+  [MSG_STATUS.EXECUTING]: { icon: '\u25C9', label: 'Agent \u6267\u884C\u4E2D', cls: 'status-executing' },
+  [MSG_STATUS.READ]:      { icon: '\u25C9\u25C9', label: '\u5DF2\u8BFB', cls: 'status-read' },
+};
+
+export function MessageItem({ message, avatar, align, isGold, msgStatus }) {
   const isRight = align === 'right';
   const isImage = avatar.startsWith('/');
 
@@ -26,6 +34,7 @@ export function MessageItem({ message, avatar, align, isGold }) {
   const timeStr = `${time.getHours().toString().padStart(2, '0')}:${time.getMinutes().toString().padStart(2, '0')}`;
 
   const isSystem = message.type === 'system';
+  const status = STATUS_ICONS[msgStatus] || null;
 
   if (isSystem) {
     return (
@@ -51,7 +60,14 @@ export function MessageItem({ message, avatar, align, isGold }) {
             dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }}
           />
         </div>
-        <div class="msg-time">{timeStr}</div>
+        <div class="msg-footer">
+          <span class="msg-time">{timeStr}</span>
+          {isRight && status && (
+            <span class={`msg-status ${status.cls}`} title={status.label}>
+              {status.icon}
+            </span>
+          )}
+        </div>
       </div>
       {isRight && (
         <div class="msg-avatar">

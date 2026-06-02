@@ -173,13 +173,15 @@ export function createAgent(config) {
    * @param {string} content — 消息内容（支持 Markdown）
    * @param {string} [type]  — 消息类型，默认 'text'
    * @param {string} [replyTo] — 回复的消息 ID
+   * @param {string} [channel] — 频道，默认 'group'
    */
-  async function send(content, type = 'text', replyTo = null) {
+  async function send(content, type = 'text', replyTo = null, channel = 'group') {
     assertConnected();
     return post('/api/message', {
       from: id,
       content,
       type,
+      channel,
       ...(replyTo && { replyTo }),
     });
   }

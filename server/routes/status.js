@@ -21,7 +21,9 @@ router.post('/', (req, res) => {
     return res.status(404).json({ error: 'Agent not found. Register first via POST /api/register' });
   }
 
-  const resolvedLocation = location || (status === 'idle' || status === 'offline' ? 'sofa' : status === 'error' ? 'bug' : 'desk');
+  // 默认位置：每个 agent 有自己的工位
+  const agentHome = { cc: 'cc_desk', xiaoma: 'xm_desk' };
+  const resolvedLocation = location || agentHome[agentId] || 'xm_desk';
   const now = Date.now();
 
   run(

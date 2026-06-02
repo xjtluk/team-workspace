@@ -1,18 +1,19 @@
-/* 状态栏样式 */
+/* 状态栏样式 — 增强版 */
 .status-bar {
   position: fixed;
   bottom: 0;
   left: 0;
   right: 0;
-  height: 28px;
+  height: 32px;
   background: var(--bg-tertiary);
-  border-top: 1px solid rgba(255,255,255,0.05);
+  border-top: 1px solid rgba(255,255,255,0.08);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 12px;
+  padding: 0 16px;
   font-size: 10px;
   z-index: 100;
+  gap: 16px;
 }
 
 .status-connection {
@@ -20,6 +21,9 @@
   align-items: center;
   gap: 6px;
   color: var(--text-secondary);
+  font-family: var(--font-pixel);
+  font-size: 9px;
+  flex-shrink: 0;
 }
 
 .status-dot {
@@ -40,18 +44,38 @@
 
 .status-agents {
   display: flex;
-  gap: 12px;
+  gap: 20px;
+  flex: 1;
+  justify-content: flex-end;
+  overflow: hidden;
 }
 
-.status-agent {
-  color: var(--text-secondary);
+.status-agent-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-pixel);
+  font-size: 9px;
+  white-space: nowrap;
 }
 
-.agent-online {
-  color: var(--accent-green);
+.status-agent-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 
-.agent-offline {
-  color: var(--text-secondary);
-  opacity: 0.5;
+.status-agent-name {
+  color: var(--text-primary);
+  font-weight: bold;
+}
+
+.status-agent-status {
+  opacity: 0.85;
+}
+
+.status-agent-progress {
+  opacity: 0.7;
+  font-size: 8px;
 }

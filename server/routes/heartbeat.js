@@ -7,7 +7,7 @@ const router = Router();
 const HEARTBEAT_TIMEOUT = 60000; // 60 秒
 
 router.post('/', (req, res) => {
-  const { agentId } = req.body;
+  const { agentId, lastSeenTimestamp } = req.body;
 
   if (!agentId) {
     return res.status(400).json({ error: 'agentId is required' });
@@ -20,18 +20,45 @@ router.post('/', (req, res) => {
 
   const now = Date.now();
 
+  // 更新在线状态
   run('UPDATE agents SET online = 1, last_seen = ? WHERE id = ?', [now, agentId]);
 
+  // 处理离线队列
   const pending = queryOne('SELECT COUNT(*) as count FROM offline_queue WHERE to_id = ? AND delivered = 0', [agentId]);
-
   run('UPDATE offline_queue SET delivered = 1 WHERE to_id = ? AND delivered = 0', [agentId]);
 
+  // 广播上线状态
   broadcast({
     type: 'agent_online',
     payload: { agentId, online: true },
   });
 
-  res.json({ ok: true, pendingMessages: pending ? pending.count : 0 });
+  // 查询新消息（自上次心跳以来）
+  let newMessages = [];
+  if (lastSeenTimestamp) {
+    newMessages = query(
+      `SELECT id, from_id, from_name, content, type, created_at
+       FROM messages
+       WHERE created_at > ? AND from_id != ?
+       ORDER BY created_at ASC
+       LIMIT 50`,
+      [lastSeenTimestamp, agentId]
+    ).map(msg => ({
+      id: msg.id,
+      from: msg.from_id,
+      fromName: msg.from_name,
+      content: msg.content,
+      type: msg.type,
+      timestamp: msg.created_at,
+    }));
+  }
+
+  res.json({
+    ok: true,
+    pendingMessages: pending ? pending.count : 0,
+    newMessages,
+    serverTimestamp: now,
+  });
 });
 
 // 心跳超时检测 — 每 15 秒检查一次

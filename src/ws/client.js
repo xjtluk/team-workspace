@@ -1,18 +1,40 @@
 import { useState, useEffect, useRef, useCallback } from 'preact/hooks';
 
-const WS_URL = `ws://${location.host}/ws`;
+const WS_BASE = `ws://${location.host}/ws`;
+
+// 消息状态枚举
+export const MSG_STATUS = {
+  SENDING: 'sending',    // 正在发送
+  SENT: 'sent',          // 已发送（单勾）
+  DELIVERED: 'delivered', // 已送达（双勾）
+  EXECUTING: 'executing', // Agent 正在执行
+  READ: 'read',          // 已读/已处理
+};
 
 export function useWS() {
   const [agents, setAgents] = useState({});
   const [messages, setMessages] = useState([]);
+  const [messageStatuses, setMessageStatuses] = useState({});
   const [wsConnected, setWsConnected] = useState(false);
+  const [currentChannel, setCurrentChannel] = useState('group');
   const wsRef = useRef(null);
   const reconnectTimer = useRef(null);
+  const pendingMessages = useRef({}); // 待确认的消息
 
-  const connect = useCallback(() => {
+  const connect = useCallback(async () => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
-    const ws = new WebSocket(WS_URL);
+    // 获取认证 token
+    let wsUrl = WS_BASE;
+    try {
+      const res = await fetch('/api/auth/token');
+      const { token } = await res.json();
+      wsUrl = `${WS_BASE}?token=${token}`;
+    } catch (e) {
+      console.error('Failed to fetch WS token:', e);
+    }
+
+    const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
     ws.onopen = () => {
@@ -29,18 +51,54 @@ export function useWS() {
 
         // 处理 agent 状态变更
         if (data.type === 'status_change' && data.payload) {
-          const { agentId, ...statusData } = data.payload;
+          const { agentId, status: agentStatus, activity, ...statusData } = data.payload;
           setAgents(prev => ({
             ...prev,
-            [agentId]: { ...prev[agentId], id: agentId, ...statusData }
+            [agentId]: { ...prev[agentId], id: agentId, status: agentStatus, activity, ...statusData }
           }));
+          // agent 进入工作状态 → 把最近的 KK 消息标记为"执行中"
+          if (agentStatus === 'working') {
+            setMessageStatuses(prev => {
+              const updated = { ...prev };
+              // 找到最近 5 条状态为 sent 的 KK 消息，标记为 executing
+              let count = 0;
+              for (let i = messages.length - 1; i >= 0 && count < 2; i--) {
+                const m = messages[i];
+                if (m.from === 'kk' && (prev[m.id] === MSG_STATUS.SENT || prev[m.id] === MSG_STATUS.DELIVERED)) {
+                  updated[m.id] = MSG_STATUS.EXECUTING;
+                  count++;
+                }
+              }
+              return updated;
+            });
+          }
+          // agent 回到空闲 → 把 executing 的消息标记为已读
+          if (agentStatus === 'idle') {
+            setMessageStatuses(prev => {
+              const updated = { ...prev };
+              Object.keys(updated).forEach(id => {
+                if (updated[id] === MSG_STATUS.EXECUTING) {
+                  updated[id] = MSG_STATUS.READ;
+                }
+              });
+              return updated;
+            });
+          }
         }
-        // 处理 agent 上下线
-        else if (data.type === 'agent_online' && data.payload) {
-          const { agentId, online } = data.payload;
+        // 处理 agent 上下线（携带完整状态）
+        else if ((data.type === 'agent_online' || data.type === 'agent_offline') && data.payload) {
+          const { agentId, online, status, activity, progress, location } = data.payload;
           setAgents(prev => ({
             ...prev,
-            [agentId]: { ...prev[agentId], id: agentId, online }
+            [agentId]: {
+              ...prev[agentId],
+              id: agentId,
+              online,
+              status: status || prev[agentId]?.status || 'idle',
+              activity: activity || '',
+              progress: progress || 0,
+              location: location || prev[agentId]?.location || 'sofa',
+            }
           }));
         }
         // 处理新消息
@@ -50,6 +108,22 @@ export function useWS() {
             if (prev.some(m => m.id === msg.id)) return prev;
             return [...prev, msg];
           });
+        }
+        // 处理消息确认（ack）
+        else if (data.type === 'message_ack' && data.payload) {
+          const { messageId, status, agentId } = data.payload;
+          setMessageStatuses(prev => ({
+            ...prev,
+            [messageId]: status || MSG_STATUS.DELIVERED,
+          }));
+          // 如果 ack 带有 agent 信息，表示某个 agent 正在处理
+          if (agentId) {
+            setMessageStatuses(prev => ({
+              ...prev,
+              [messageId]: MSG_STATUS.EXECUTING,
+              [`${messageId}_agent`]: agentId,
+            }));
+          }
         }
       } catch (e) {
         console.error('WS message parse error:', e);
@@ -80,19 +154,29 @@ export function useWS() {
         const agentsData = await agentsRes.json();
         const historyData = await historyRes.json();
 
-        // 加载 agents
+        // 加载 agents（统一字段名：API 返回 current_status，WS 用 status）
         if (Array.isArray(agentsData) && agentsData.length) {
           setAgents(prev => {
             const map = { ...prev };
-            agentsData.forEach(a => { map[a.id] = a; });
+            agentsData.forEach(a => {
+              map[a.id] = {
+                ...a,
+                status: a.current_status || a.status || 'idle',
+                activity: a.current_activity || a.activity || '',
+              };
+            });
             return map;
           });
         }
 
-        // 加载历史消息 — API 返回 { messages: [...], hasMore: true }
+        // 加载历史消息
         const historyMsgs = historyData?.messages;
         if (Array.isArray(historyMsgs) && historyMsgs.length) {
           setMessages(historyMsgs);
+          // 历史消息统一标记为已读
+          const statuses = {};
+          historyMsgs.forEach(m => { statuses[m.id] = MSG_STATUS.READ; });
+          setMessageStatuses(statuses);
         }
       } catch (e) {
         console.error('Failed to load initial state:', e);
@@ -107,55 +191,101 @@ export function useWS() {
     };
   }, [connect]);
 
-  // BUG FIX: send via WS with HTTP fallback
+  // 发送消息（WS优先，HTTP降级）
   const sendMessage = useCallback((msg) => {
+    const localId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const channel = msg.channel || currentChannel;
     const payload = {
       type: 'send_message',
       payload: {
         content: msg.content,
         from: msg.from || 'kk',
-        fromName: msg.fromName || 'KK'
+        fromName: msg.fromName || 'KK',
+        channel,
+        messageId: localId,
       }
     };
 
-    // Try WebSocket first
+    // 立即显示消息（sending 状态）
+    const localMsg = {
+      id: localId,
+      from: msg.from || 'kk',
+      fromName: msg.fromName || 'KK',
+      content: msg.content,
+      type: 'text',
+      channel,
+      timestamp: Date.now(),
+    };
+
+    setMessages(prev => [...prev, localMsg]);
+    setMessageStatuses(prev => ({
+      ...prev,
+      [localId]: MSG_STATUS.SENDING,
+    }));
+
+    // 尝试通过 WebSocket 发送
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(payload));
+      // 标记为已发送
+      setTimeout(() => {
+        setMessageStatuses(prev => ({
+          ...prev,
+          [localId]: prev[localId] === MSG_STATUS.SENDING ? MSG_STATUS.SENT : prev[localId],
+        }));
+      }, 100);
       return true;
     }
 
-    // HTTP fallback when WS is not connected
+    // HTTP fallback
     fetch('/api/message', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         from: msg.from || 'kk',
         content: msg.content,
-        type: 'text'
+        type: 'text',
+        channel,
+        messageId: localId,
       })
     }).then(res => {
       if (res.ok) {
-        // Broadcast will come through WS when it reconnects,
-        // but add locally for immediate feedback
-        const localMsg = {
-          id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-          from: msg.from || 'kk',
-          fromName: msg.fromName || 'KK',
-          content: msg.content,
-          type: 'text',
-          timestamp: Date.now()
-        };
-        setMessages(prev => {
-          if (prev.some(m => m.id === localMsg.id)) return prev;
-          return [...prev, localMsg];
-        });
+        setMessageStatuses(prev => ({
+          ...prev,
+          [localId]: MSG_STATUS.SENT,
+        }));
       }
     }).catch(err => {
       console.error('HTTP send failed:', err);
+      setMessageStatuses(prev => ({
+        ...prev,
+        [localId]: MSG_STATUS.SENT, // still mark as sent for UX
+      }));
     });
 
     return true;
+  }, [currentChannel]);
+
+  // 切换频道
+  const switchChannel = useCallback((channel) => {
+    setCurrentChannel(channel);
+    // 重新加载该频道的历史消息
+    fetch(`/api/history?limit=50&channel=${channel}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.messages) {
+          setMessages(data.messages);
+          const statuses = {};
+          data.messages.forEach(m => { statuses[m.id] = MSG_STATUS.READ; });
+          setMessageStatuses(statuses);
+        }
+      })
+      .catch(err => {
+        console.error('Failed to load channel history:', err);
+      });
   }, []);
 
-  return { agents, messages, wsConnected, sendMessage };
+  // 获取当前频道的消息
+  const channelMessages = messages.filter(m => (m.channel || 'group') === currentChannel);
+
+  return { agents, messages: channelMessages, messageStatuses, wsConnected, sendMessage, currentChannel, switchChannel };
 }

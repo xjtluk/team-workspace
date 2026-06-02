@@ -4,12 +4,18 @@ import { broadcast } from '../ws/handler.js';
 
 const router = Router();
 
+// 验证 channel 枚举值
+const VALID_CHANNELS = ['group', 'dm', 'system'];
+
 router.post('/', (req, res) => {
-  const { from, content, type = 'text', replyTo = null } = req.body;
+  const { from, content, type = 'text', channel = 'group', replyTo = null } = req.body;
 
   if (!from || !content) {
     return res.status(400).json({ error: 'from and content are required' });
   }
+
+  // 验证 channel
+  const validChannel = VALID_CHANNELS.includes(channel) ? channel : 'group';
 
   const agent = queryOne('SELECT * FROM agents WHERE id = ?', [from]);
   if (!agent) {
@@ -21,8 +27,8 @@ router.post('/', (req, res) => {
   const messageId = `msg_${now}_${from}_${rand}`;
 
   run(
-    `INSERT INTO messages (id, from_id, from_name, content, type, reply_to, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [messageId, from, agent.name, content, type, replyTo, now]
+    `INSERT INTO messages (id, from_id, from_name, content, type, channel, reply_to, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [messageId, from, agent.name, content, type, validChannel, replyTo, now]
   );
 
   // 处理离线队列
@@ -39,6 +45,7 @@ router.post('/', (req, res) => {
       fromName: agent.name,
       content,
       type,
+      channel: validChannel,
       timestamp: now,
       replyTo,
     },

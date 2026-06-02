@@ -266,6 +266,21 @@ function parseXmlToolCalls(text) {
   return calls;
 }
 
+// 修复截断的 UTF-8 文本
+function fixTruncatedUtf8(text) {
+  if (!text) return text;
+
+  // 检测 Unicode 替换字符（U+FFFD），这是 UTF-8 解码失败的标志
+  if (text.includes('�')) {
+    // 移除末尾的替换字符
+    return text.replace(/�+$/, '').trim();
+  }
+
+  // 检测不完整的 UTF-8 序列（高位字节后缺少低位字节）
+  // 这种情况在 Node.js 中通常会表现为替换字符，但以防万一
+  return text;
+}
+
 // Anthropic API 调用
 async function callAnthropic(systemPrompt, messages, useTools) {
   const body = {
@@ -294,7 +309,23 @@ async function callAnthropic(systemPrompt, messages, useTools) {
     throw new Error(`Anthropic API error: ${response.status} ${err}`);
   }
 
-  const data = await response.json();
+  // 获取原始响应文本，检查编码
+  const responseText = await response.text();
+
+  // 检测截断的 UTF-8 字符
+  if (responseText.includes('�')) {
+    console.warn('[AI] 检测到 UTF-8 编码问题，尝试修复');
+  }
+
+  let data;
+  try {
+    data = JSON.parse(responseText);
+  } catch (parseErr) {
+    // JSON 解析失败，可能是响应被截断
+    console.error('[AI] JSON 解析失败，响应可能被截断:', parseErr.message);
+    throw new Error(`API 响应解析失败: ${parseErr.message}`);
+  }
+
   const content = data.content || [];
 
   const toolUses = content.filter(b => b.type === 'tool_use');
@@ -309,12 +340,12 @@ async function callAnthropic(systemPrompt, messages, useTools) {
         name: t.name,
         input: t.input,
       })),
-      text: textBlocks.map(b => b.text).join('\n'),
+      text: textBlocks.map(b => fixTruncatedUtf8(b.text)).join('\n'),
     };
   }
 
   // 检查 XML 格式的工具调用（兼容某些 API 代理）
-  const fullText = textBlocks.map(b => b.text).join('\n');
+  const fullText = textBlocks.map(b => fixTruncatedUtf8(b.text)).join('\n');
   const xmlToolCalls = parseXmlToolCalls(fullText);
   if (xmlToolCalls.length > 0) {
     return {
@@ -390,6 +421,21 @@ export async function generateReply(systemPrompt, history, userMessage, useTools
   return Promise.race([taskPromise, timeoutPromise]);
 }
 
+// 清洗工具调用标签（防止泄漏到群聊）
+function cleanToolCallTags(text) {
+  if (!text) return '';
+  const oc = String.fromCharCode(60);
+  const cc = String.fromCharCode(62);
+  const openTag = oc + 'tool_call' + cc;
+  const closeTag = oc + '/tool_call' + cc;
+  const openEsc = openTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const closeEsc = closeTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return text
+    .replace(new RegExp(openEsc + '[\\s\\S]*?' + closeEsc, 'g'), '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 async function _generateReply(systemPrompt, history, userMessage, useTools) {
   const messages = [];
 
@@ -410,7 +456,7 @@ async function _generateReply(systemPrompt, history, userMessage, useTools) {
   // 如果不使用工具，直接返回文本回复
   if (!useTools) {
     const result = await callWithRetry(() => callAPI(systemPrompt, messages, false));
-    return result.text || '';
+    return cleanToolCallTags(result.text);
   }
 
   // 工具调用循环（最多 5 轮）
@@ -419,7 +465,7 @@ async function _generateReply(systemPrompt, history, userMessage, useTools) {
     const result = await callWithRetry(() => callAPI(systemPrompt, messages, true));
 
     if (result.type === 'text') {
-      return result.text || '';
+      return cleanToolCallTags(result.text);
     }
 
     // 有工具调用 → 执行 → 返回结果继续对话
@@ -482,5 +528,5 @@ async function _generateReply(systemPrompt, history, userMessage, useTools) {
   // 工具调用轮次已达上限，让 AI 基于已收集的信息生成回复
   console.log(`[AI] 工具调用轮次已达上限 (5次)，基于已收集信息生成回复`);
   const finalResult = await callWithRetry(() => callAPI(systemPrompt, messages, false));
-  return finalResult.text || '';
+  return cleanToolCallTags(finalResult.text);
 }

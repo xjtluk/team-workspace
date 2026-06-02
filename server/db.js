@@ -47,13 +47,23 @@ export async function initDB() {
       from_name   TEXT NOT NULL,
       content     TEXT NOT NULL,
       type        TEXT DEFAULT 'text',
+      channel     TEXT DEFAULT 'group',
       reply_to    TEXT,
       delivered_to TEXT DEFAULT '[]',
       created_at  INTEGER NOT NULL
     )
   `);
 
+  // 迁移：给已有表加 channel 列（ALTER TABLE IF NOT EXISTS 不支持，用 try-catch）
+  try {
+    db.run(`ALTER TABLE messages ADD COLUMN channel TEXT DEFAULT 'group'`);
+    console.log('[DB] 迁移：已添加 channel 列');
+  } catch {
+    // 列已存在，忽略
+  }
+
   db.run(`CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(channel)`);
 
   db.run(`
     CREATE TABLE IF NOT EXISTS status_log (
@@ -101,17 +111,41 @@ export async function initDB() {
 }
 
 // 保存数据库到文件
-function saveDB() {
+export function saveDB() {
+  if (!db) return;
   const data = db.export();
   const buffer = Buffer.from(data);
   fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
   fs.writeFileSync(DB_PATH, buffer);
 }
 
-// 定期保存（每 30 秒）
+// Debounce 写后保存（2 秒内多次写入只触发一次磁盘写）
+let saveTimer = null;
+function scheduleSave() {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    saveDB();
+  }, 2000);
+}
+
+// 定期保存（每 30 秒，兜底）
 setInterval(() => {
   if (db) saveDB();
 }, 30000);
+
+// Graceful shutdown — 退出前确保数据落盘
+function shutdown() {
+  console.log('[DB] Shutting down, saving...');
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  saveDB();
+}
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
+process.on('exit', shutdown);
 
 // 查询辅助方法
 export function query(sql, params = []) {
@@ -133,6 +167,7 @@ export function queryOne(sql, params = []) {
 
 export function run(sql, params = []) {
   db.run(sql, params);
+  scheduleSave();
 }
 
 export function getDB() {

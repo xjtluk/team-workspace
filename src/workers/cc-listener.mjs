@@ -9,12 +9,12 @@
  *   4. 执行任务 → 完成后汇报 + TOK 自检
  *   5. 结果发回群聊 + 写入共享记忆
  */
-import { createAgent } from '../agent-client.js';
-import { generateReply } from '../ai-reply.js';
-import { loadTeamMemory, loadChatHistory } from '../memory.js';
-import { setCache, getCache } from '../cache.js';
-import { getFullMemory } from '../shared-memory.js';
-import { validateEncoding } from '../encoding.js';
+import { createAgent } from '../sdk/agent-client.js';
+import { generateReply } from '../sdk/ai-reply.js';
+import { loadTeamMemory, loadChatHistory } from '../sdk/memory.js';
+import { setCache, getCache } from '../sdk/cache.js';
+import { getFullMemory } from '../sdk/shared-memory.js';
+import { validateEncoding } from '../sdk/encoding.js';
 import { writeFileSync, readdirSync, statSync, unlinkSync, existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import WebSocket from 'ws';
@@ -214,6 +214,11 @@ const historyMsgs = await loadChatHistory(30);
 historyMsgs.forEach(m => chatHistory.push({ role: m.from, name: m.fromName, content: m.content }));
 console.log(`[CC] 加载了 ${historyMsgs.length} 条历史消息`);
 
+// 用最后一条历史消息的时间戳初始化，避免重复拉取已知消息
+let lastMessageTimestamp = historyMsgs.length > 0
+  ? Math.max(...historyMsgs.map(m => m.timestamp || 0))
+  : Date.now();
+
 let lastReplyTime = 0;
 const COOLDOWN = 5000;
 const recentMsgKeys = new Set();
@@ -262,8 +267,6 @@ function generateTokCheck() {
 }
 
 // ── 补拉断开期间的消息 ──
-let lastMessageTimestamp = Date.now();
-
 async function fetchMissedMessages() {
   try {
     const response = await fetch(`http://127.0.0.1:3210/api/history?since=${lastMessageTimestamp}&limit=50`);
@@ -397,6 +400,7 @@ async function handleMessage(raw) {
   }
   isProcessing = true;
 
+  try {
   // 根据消息类型处理
   let reply = '';
 
@@ -407,13 +411,15 @@ async function handleMessage(raw) {
     case 'task_assign':
       // 收到任务，开始执行
       console.log(`[CC] 收到任务: ${protocol.task}`);
-      await cc.work(`执行任务: ${protocol.task}`, 0);
+      await cc.work(`执行任务: ${protocol.task}`, 10);
 
       // 构造 prompt 让 AI 执行任务
       const taskPrompt = `@CC [任务] ${protocol.task}\n\n请执行这个任务。完成后，用以下格式汇报：\n@小马 [完成] 任务描述 | 文件路径 | T:匹配 O:合规 K:有效\n\n如果遇到问题，用以下格式上报：\n@小马 [问题] 问题描述`;
 
       try {
+        await cc.work(`分析任务: ${protocol.task}`, 30);
         const taskReply = await generateReply(SYSTEM_PROMPT, chatHistory.slice(-6, -1), taskPrompt, true);
+        await cc.work(`整理结果: ${protocol.task}`, 70);
         reply = taskReply.trim();
 
         // 如果 AI 返回空字符串，生成一个简单的回复
@@ -457,12 +463,14 @@ async function handleMessage(raw) {
     case 'reject':
       // 被打回，需要修正
       console.log(`[CC] 被打回: ${protocol.description}，原因: ${protocol.reason}`);
-      await cc.work(`修正任务: ${protocol.description}`, 0);
+      await cc.work(`修正任务: ${protocol.description}`, 10);
 
       const rejectPrompt = `@CC [打回] ${protocol.description} | ${protocol.reason}\n\n任务被打回，请根据原因修正。完成后重新汇报。`;
 
       try {
+        await cc.work(`分析修正: ${protocol.description}`, 30);
         const rejectReply = await generateReply(SYSTEM_PROMPT, chatHistory.slice(-6, -1), rejectPrompt, true);
+        await cc.work(`整理结果: ${protocol.description}`, 70);
         reply = rejectReply.trim();
 
         // 如果 AI 没有自动添加 TOK 自检，手动添加
@@ -480,7 +488,7 @@ async function handleMessage(raw) {
     case 'at_cc':
       // 其他 @CC 消息，让 AI 判断是否需要回复
       const recent = chatHistory.slice(-6).map(m => `${m.name}: ${m.content}`).join('\n');
-      const prompt = `${recent}\n\n${msg.fromName}："${msg.content}"\n\n这是 @CC 的消息。你需要回复吗？如果消息和你无关，回复 [SKIP]。如果需要执行任务或参与讨论，直接回复。`;
+      const prompt = `${recent}\n\n${msg.fromName}："${msg.content}"\n\n这是 @CC 的消息。你需要回复吗？如果消息和你无关，回复 [SKIP]。如果需要执行任务或参与讨论，直接回复。\n\n重要：如果回复涉及团队协作、产品、项目进展等内容，请在回复开头 @小马 让它知晓。如果只是技术细节确认，直接回复 @KK 即可。`;
 
       try {
         await cc.work('正在思考...', 30);
@@ -493,6 +501,7 @@ async function handleMessage(raw) {
         }
 
         reply = clean.replace(/^(?:CC|cc)[：:]\s*/i, '');
+        await cc.work('正在回复...', 80);
       } catch (err) {
         console.error('[CC] AI 错误:', err.message);
         await cc.idle();
@@ -523,12 +532,15 @@ async function handleMessage(raw) {
     }
   }
 
-  // 处理排队的消息（FIFO：先进先出）
-  isProcessing = false;
-  if (pendingMessages.length > 0) {
-    const nextMsg = pendingMessages.shift(); // FIFO: 取第一条
-    // 重新触发处理
-    handleMessage(JSON.stringify({ type: 'new_message', payload: nextMsg }));
+  } catch (err) {
+    console.error('[CC] 消息处理异常:', err.message);
+  } finally {
+    isProcessing = false;
+    // 处理排队的消息（FIFO：先进先出）
+    if (pendingMessages.length > 0) {
+      const nextMsg = pendingMessages.shift();
+      handleMessage(JSON.stringify({ type: 'new_message', payload: nextMsg }));
+    }
   }
 }
 
