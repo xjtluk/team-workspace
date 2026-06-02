@@ -65,6 +65,12 @@ ${sharedMemory}
 4. 其他消息可以 SKIP
 5. 同一件事只回复一次，不要重复
 
+## 私信（DM）规则
+- 收到 KK 的私信，如果内容涉及群聊、团队、CC、复盘、任务分配等，必须在群里（group）回复和行动，不要只在私信里回复
+- 私信中说"去群里XXX"、"在群里组织XXX"、"通知CC"等 → 直接在群里发消息执行
+- 只有纯私密对话（如"你觉得呢"、个人建议）才在私信里回复
+- 判断依据：消息内容是否需要群内其他人看到或参与
+
 ## 任务执行规则
 - KK 说"做 XXX"，如果可行，直接用工具执行
 - 执行过程中需要 CC 配合，在消息里 @CC 说明需求
@@ -178,7 +184,7 @@ async function handleMessage(raw) {
       console.log('[小马] Marvis 在线，Listener 静默中（只记录不回复）');
       xiaoma._marvisLogged = true;
     }
-    chatHistory.push({ role: msg.from, name: msg.fromName, content: msg.content });
+    chatHistory.push({ role: msg.from, name: msg.fromName, content: msg.content, channel: msg.channel || 'group' });
     if (chatHistory.length > 30) chatHistory.shift();
     // 更新最后消息时间戳（补拉用）
     if (msg.timestamp && msg.timestamp > lastMessageTimestamp) {
@@ -202,7 +208,7 @@ async function handleMessage(raw) {
     arr.forEach(k => recentMsgKeys.add(k));
   }
 
-  chatHistory.push({ role: msg.from, name: msg.fromName, content: msg.content });
+  chatHistory.push({ role: msg.from, name: msg.fromName, content: msg.content, channel: msg.channel || 'group' });
   if (chatHistory.length > 30) chatHistory.shift();
 
   // 更新最后消息时间戳（补拉用）
@@ -227,8 +233,13 @@ async function handleMessage(raw) {
   }
   isProcessing = true;
 
-  const recent = chatHistory.slice(-6).map(m => `${m.name}: ${m.content}`).join('\n');
-  const prompt = `${recent}\n\n${msg.fromName}："${msg.content}"\n\n你需要回复吗？如果消息和你无关，回复 [SKIP]。如果需要执行任务或参与讨论，直接回复。\n\n重要：如果消息 @了你，你必须回复，不要 SKIP。如果是 CC 给你汇报工作或请你评价，你必须给出评价。`;
+  // 标注消息来源频道，让 AI 知道上下文
+  const channelTag = (msg.channel === 'dm') ? '[私信]' : '[群聊]';
+  const recent = chatHistory.slice(-6).map(m => {
+    const ch = m.channel === 'dm' ? '[私信]' : '[群聊]';
+    return `${ch} ${m.name}: ${m.content}`;
+  }).join('\n');
+  const prompt = `${recent}\n\n${channelTag} ${msg.fromName}："${msg.content}"\n\n你需要回复吗？如果消息和你无关，回复 [SKIP]。如果需要执行任务或参与讨论，直接回复。\n\n重要：如果消息 @了你，你必须回复，不要 SKIP。如果是 CC 给你汇报工作或请你评价，你必须给出评价。如果这是私信但内容涉及群聊事务（团队协作、CC、复盘、任务分配），你必须在群里回复，不要只在私信里回复。`;
 
   // 判断是否需要工具：必须是明确的执行指令，不是讨论
   const needsTool = /(?:帮我(?:写|创建|修改|删除|安装|部署|执行|运行|查看|读取|搜索|查找)|(?:执行|运行|部署|安装)(?:一下|命令|脚本|测试)|(?:写|创建|修改|删除)(?:一个|这个|文件|代码|脚本|配置))/i.test(msg.content);
@@ -265,10 +276,15 @@ async function handleMessage(raw) {
     // 如果不是 Marvis 真人在操作，标记为 [AI代理]
     const agentReply = isMarvisOnline() ? safeText : `[AI代理] ${safeText}`;
 
-    await xiaoma.send(agentReply);
+    // 判断回复频道：DM 中的群聊指令 → 发到群；否则跟随原消息频道
+    let replyChannel = msg.channel || 'group';
+    if (replyChannel === 'dm' && /@CC|群里|复盘|组织|任务分配|通知/.test(agentReply + msg.content)) {
+      replyChannel = 'group';
+    }
+    await xiaoma.send(agentReply, 'text', null, replyChannel);
     await xiaoma.idle();
     lastReplyTime = now;
-    chatHistory.push({ role: 'xiaoma', name: '小马', content: agentReply });
+    chatHistory.push({ role: 'xiaoma', name: '小马', content: agentReply, channel: replyChannel });
     console.log(`[小马] ${agentReply.substring(0, 80)}`);
   } catch (err) {
     console.error('[小马] AI 错误:', err.message);
