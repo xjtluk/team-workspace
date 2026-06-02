@@ -1,23 +1,22 @@
 #!/usr/bin/env node
 /**
- * Codex Agent — Hub-Spoke 模式
+ * CX (Codex) Agent — Hub-Spoke 模式
  *
  * 职责：
- *   1. 注册 Codex 上线 + 心跳保活
+ *   1. 注册 CX 上线 + 心跳保活
  *   2. 监听群聊消息 → 只回应 @Codex 的消息
  *   3. 解析消息协议：[任务] [委托] [完成] [问题]
  *   4. 执行任务 → 完成后汇报
  *   5. 结果发回群聊
  */
 import { createAgent } from '../sdk/agent-client.js';
-import { execSync, spawn } from 'child_process';
+import { generateReply } from '../sdk/ai-reply.js';
+import { loadTeamMemory, loadChatHistory } from '../sdk/memory.js';
+import { setCache, getCache } from '../sdk/cache.js';
+import { getFullMemory } from '../sdk/shared-memory.js';
 import { writeFileSync, existsSync, readFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import WebSocket from 'ws';
-
-// ── 配置 ──
-const CODEX_MODEL = process.env.CODEX_MODEL || 'o4-mini';
-const WORKSPACE_DIR = process.env.WORKSPACE_DIR || 'D:/BKS/projects/team-workspace';
 
 // ── 单实例保护 ──
 const PID_FILE = join(process.cwd(), '.codex-listener.pid');
@@ -29,8 +28,8 @@ function checkSingleInstance() {
       const oldPid = data.pid;
       try {
         process.kill(oldPid, 0);
-        console.error(`[Codex] 错误: codex-listener 已在运行 (PID: ${oldPid})`);
-        console.error(`[Codex] 如需重启，请先运行: taskkill /F /PID ${oldPid}`);
+        console.error(`[CX] 错误: codex-listener 已在运行 (PID: ${oldPid})`);
+        console.error(`[CX] 如需重启，请先运行: taskkill /F /PID ${oldPid}`);
         process.exit(1);
       } catch {
         // 进程不存在，可以继续
@@ -47,7 +46,91 @@ function checkSingleInstance() {
 
 checkSingleInstance();
 
-// ── 清理工具调用标签 ──
+// ── 项目路径 ──
+const PROJECT_DIR = process.env.PROJECT_DIR || 'D:/BKS/projects/team-workspace';
+console.log(`[CX] 项目目录: ${PROJECT_DIR}`);
+
+// ── 加载记忆 ──
+let teamMemory = getCache('team_memory');
+if (!teamMemory) {
+  teamMemory = loadTeamMemory(PROJECT_DIR);
+  setCache('team_memory', teamMemory, 60 * 60 * 1000);
+}
+
+const sharedMemory = await getFullMemory(30);
+console.log(`[CX] 团队记忆 ${teamMemory.length} 字符，共享记忆 ${sharedMemory.length} 字符`);
+
+// ── Agent 实例 ──
+const cx = createAgent({
+  id: 'codex',
+  name: 'Codex',
+  color: '#10A37F',
+  gridFile: 'grids/codex.js',
+});
+
+// ── 进度动画 ──
+const PROGRESS_STEPS = [
+  { activity: '正在分析任务...', progress: 30 },
+  { activity: '正在编写代码...', progress: 50 },
+  { activity: '正在测试...', progress: 70 },
+  { activity: '即将完成...', progress: 85 },
+];
+
+async function withProgress(agent, startActivity, startProgress, asyncFn) {
+  await agent.work(startActivity, startProgress);
+  let step = 0;
+  const timer = setInterval(async () => {
+    if (step < PROGRESS_STEPS.length) {
+      const s = PROGRESS_STEPS[step++];
+      try { await agent.work(s.activity, s.progress); } catch {}
+    }
+  }, 12000);
+  try {
+    return await asyncFn();
+  } finally {
+    clearInterval(timer);
+  }
+}
+
+// ── 消息协议解析 ──
+const MSG_PROTOCOL = {
+  TASK_ASSIGN: /@Codex\s*\[任务\]\s*(.+)/i,
+  DELEGATE: /@Codex\s*\[委托\]\s*(.+)/i,
+  AT_CODEX: /@Codex/i,
+};
+
+// ── 系统提示词 ──
+const SYSTEM_PROMPT = `你是 CX（Codex），BKS 研发部的代码工程师。
+
+## 身份
+- 角色：代码工程师，负责代码实现、重构、PR 管理
+- 上级：CC（研发部 Leader）
+- 同级：小马（项目部 Leader）
+
+## 职责
+1. 代码实现：按 CC 的技术方案完成编码任务
+2. 代码重构：批量代码规范化、模式迁移
+3. PR 管理：GitHub PR 审查、合并
+4. 测试用例生成：按规范生成测试用例
+
+## 行为守则
+1. 不越界：架构设计、技术决策由 CC 负责，CX 只做实现层
+2. 任务来源：技术任务由 CC 直接派发
+3. 产出物留痕：代码、报告均需落地为文件
+4. 群聊规则：只回应 @Codex 的消息；阶段完成时汇报一次
+
+## 消息格式
+- 阶段完成：@CC [完成] 描述 | 文件路径
+- 问题上报：@CC [问题] 描述
+
+## 当前项目上下文
+${teamMemory}
+
+## 最近共享记忆
+${sharedMemory}
+`;
+
+// ── 清洗工具调用标签 ──
 function cleanToolCallTags(text) {
   if (!text) return '';
   const oc = String.fromCharCode(60);
@@ -62,164 +145,201 @@ function cleanToolCallTags(text) {
     .trim();
 }
 
-// ── 调用 Codex CLI 执行任务 ──
-async function executeCodexTask(prompt, workDir) {
-  return new Promise((resolve, reject) => {
-    const args = [
-      'exec',
-      '--model', CODEX_MODEL,
-      '--sandbox', 'workspace-write',
-      '--approval', 'never',
-      '--quiet',
-      '--prompt', prompt,
-    ];
+// ── 消息处理 ──
+let isProcessing = false;
+let processingStartTime = 0;
+const pendingMessages = [];
 
-    console.log(`[Codex] 执行任务: ${prompt.substring(0, 80)}...`);
-    console.log(`[Codex] 工作目录: ${workDir}`);
-    console.log(`[Codex] 模型: ${CODEX_MODEL}`);
+// 看门狗
+setInterval(() => {
+  if (isProcessing && Date.now() - processingStartTime > 180000) {
+    console.error('[CX] 消息处理卡死超过 3 分钟，强制重置 isProcessing');
+    isProcessing = false;
+    if (pendingMessages.length > 0) {
+      const nextMsg = pendingMessages.shift();
+      handleMessage(JSON.stringify({ type: 'new_message', payload: nextMsg }));
+    }
+  }
+}, 30000);
 
-    const child = spawn('codex', args, {
-      cwd: workDir,
-      env: {
-        ...process.env,
-        OPENAI_API_KEY: process.env.OPENAI_API_KEY,
-        HTTP_PROXY: process.env.HTTP_PROXY || 'http://127.0.0.1:7897',
-        HTTPS_PROXY: process.env.HTTPS_PROXY || 'http://127.0.0.1:7897',
-      },
-      shell: true,
-      timeout: 300000, // 5 分钟超时
-    });
+async function handleMessage(raw) {
+  let msg;
+  try {
+    // 处理 Buffer 或 String
+    const str = Buffer.isBuffer(raw) ? raw.toString() : raw;
+    msg = typeof str === 'string' ? JSON.parse(str) : str;
+  } catch (e) {
+    console.error('[CX] 消息解析失败:', e.message);
+    return;
+  }
 
-    let stdout = '';
-    let stderr = '';
+  if (msg.type !== 'new_message') return;
+  const p = msg.payload;
+  if (!p || !p.content) return;
 
-    child.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
+  // 忽略自己发的消息
+  if (p.from === 'codex') return;
 
-    child.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
+  const content = p.content;
 
-    child.on('close', (code) => {
-      if (code === 0) {
-        resolve(cleanToolCallTags(stdout.trim()));
-      } else {
-        reject(new Error(`Codex exited with code ${code}: ${stderr}`));
-      }
-    });
+  // 只处理 @Codex 的消息
+  if (!MSG_PROTOCOL.AT_CODEX.test(content)) return;
 
-    child.on('error', (err) => {
-      reject(err);
-    });
+  // 排队机制
+  if (isProcessing) {
+    pendingMessages.push(p);
+    console.log(`[CX] 消息排队中，当前队列: ${pendingMessages.length}`);
+    return;
+  }
+
+  isProcessing = true;
+  processingStartTime = Date.now();
+  console.log(`[CX] 收到消息: ${content.substring(0, 80)}`);
+
+  try {
+    // 加载聊天历史
+    const chatHistory = await loadChatHistory(50);
+
+    // 构建 prompt
+    let prompt = '';
+
+    if (MSG_PROTOCOL.TASK_ASSIGN.test(content)) {
+      const match = content.match(MSG_PROTOCOL.TASK_ASSIGN);
+      prompt = `CC 派发了任务：${match[1]}\n\n请执行任务，完成后回复 @CC [完成] 并附上文件路径。`;
+    } else if (MSG_PROTOCOL.DELEGATE.test(content)) {
+      const match = content.match(MSG_PROTOCOL.DELEGATE);
+      prompt = `CC 内部委托：${match[1]}\n\n请执行委托，完成后回复 @CC [完成]。`;
+    } else {
+      prompt = `@Codex 的消息：${content}\n\n请根据上下文回复。`;
+    }
+
+    // 生成回复
+    const aiReply = await withProgress(cx, '正在分析任务...', 30,
+      () => generateReply(SYSTEM_PROMPT, chatHistory, prompt, false));
+
+    // 清洗并发送
+    const cleanedReply = cleanToolCallTags(aiReply);
+
+    if (cleanedReply && cleanedReply.trim()) {
+      const maxLen = 2000;
+      const finalReply = cleanedReply.length > maxLen
+        ? cleanedReply.substring(0, maxLen) + '\n\n...(消息过长，已截断)'
+        : cleanedReply;
+
+      await cx.send(finalReply);
+      console.log(`[CX] 回复已发送 (${finalReply.length} 字符)`);
+    } else {
+      await cx.send('@CC [问题] 任务执行失败：AI 返回空回复');
+    }
+
+  } catch (err) {
+    console.error('[CX] 处理错误:', err.message);
+    try {
+      await cx.send(`@CC [问题] 任务执行失败：${err.message}`);
+    } catch {}
+  } finally {
+    isProcessing = false;
+    if (pendingMessages.length > 0) {
+      const nextMsg = pendingMessages.shift();
+      console.log(`[CX] 处理排队消息，剩余: ${pendingMessages.length}`);
+      setTimeout(() => handleMessage(JSON.stringify({ type: 'new_message', payload: nextMsg })), 1000);
+    }
+  }
+}
+
+// ── WebSocket 监听（自动重连） ──
+let ws = null;
+let reconnectDelay = 1000;
+let lastMessageTime = 0;
+
+// 心跳假死检测
+setInterval(() => {
+  if (ws && ws.readyState === ws.OPEN && Date.now() - lastMessageTime > 90000) {
+    console.warn('[CX] WebSocket 假死（90秒无消息），强制重连');
+    try { ws.terminate(); } catch {}
+  }
+}, 30000);
+
+async function connectWebSocket() {
+  if (ws) {
+    try { ws.close(); } catch {}
+  }
+
+  let wsToken = process.env.WS_TOKEN || '';
+  if (!wsToken) {
+    try {
+      const res = await fetch('http://127.0.0.1:3210/api/auth/token');
+      const data = await res.json();
+      wsToken = data.token || '';
+    } catch (e) {
+      console.warn('[CX] 获取 WS Token 失败，使用空 token:', e.message);
+    }
+  }
+  ws = new WebSocket(`ws://localhost:3210/ws?token=${wsToken}`);
+
+  ws.on('open', async () => {
+    console.log('[CX] WebSocket 已连接');
+    reconnectDelay = 1000;
+    lastMessageTime = Date.now();
+  });
+
+  ws.on('close', (code) => {
+    console.log(`[CX] WebSocket 断开 (code: ${code})，${reconnectDelay / 1000}秒后重连`);
+    scheduleReconnect();
+  });
+
+  ws.on('error', (err) => {
+    console.error('[CX] WebSocket 错误:', err.message);
+  });
+
+  ws.on('pong', () => {
+    lastMessageTime = Date.now();
+  });
+
+  ws.on('message', (data) => {
+    lastMessageTime = Date.now();
+    handleMessage(data);
   });
 }
 
-// ── 解析消息协议 ──
-function parseMessageProtocol(content) {
-  const patterns = {
-    task: /@\S+\s*\[任务\]\s*(.*)/s,
-    delegate: /@\S+\s*\[委托\]\s*(.*)/s,
-    complete: /@\S+\s*\[完成\]\s*(.*)/s,
-    issue: /@\S+\s*\[问题\]\s*(.*)/s,
-  };
-
-  for (const [type, pattern] of Object.entries(patterns)) {
-    const match = content.match(pattern);
-    if (match) {
-      return { type, content: match[1].trim() };
-    }
-  }
-
-  // 如果没有协议标签，当作普通任务
-  return { type: 'task', content: content.replace(/@\S+\s*/, '').trim() };
+function scheduleReconnect() {
+  setTimeout(() => {
+    reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+    connectWebSocket();
+  }, reconnectDelay);
 }
+
+// ── 心跳 ping ──
+setInterval(() => {
+  if (ws && ws.readyState === ws.OPEN) {
+    ws.ping();
+  }
+}, 30000);
 
 // ── 主流程 ──
 async function main() {
-  // 注册 Codex Agent
-  const codex = createAgent({
-    id: 'codex',
-    name: 'Codex',
-    color: '#10A37F', // OpenAI 绿
-    gridFile: 'grids/codex.js',
-  });
+  // 注册 Agent
+  await cx.connect();
+  console.log('[CX] 已注册到 Workspace Server');
 
-  // 连接到 Workspace Server
-  await codex.connect();
-  console.log('[Codex] 已连接到 Workspace Server');
-
-  // 监听群聊消息
-  codex.onMessage(async (msg) => {
-    // 只处理 @Codex 的消息
-    if (!msg.content || !msg.content.includes('@Codex')) {
-      return;
-    }
-
-    // 忽略自己发的消息
-    if (msg.from === 'codex') {
-      return;
-    }
-
-    console.log(`[Codex] 收到消息: ${msg.content.substring(0, 100)}`);
-
-    // 解析消息协议
-    const { type, content } = parseMessageProtocol(msg.content);
-
-    // 只处理任务和委托
-    if (type !== 'task' && type !== 'delegate') {
-      console.log(`[Codex] 跳过非任务消息: ${type}`);
-      return;
-    }
-
-    // 更新状态为工作中
-    await codex.work('正在执行任务...', 10);
-
-    try {
-      // 执行 Codex 任务
-      const result = await executeCodexTask(content, WORKSPACE_DIR);
-
-      // 发送结果
-      const reply = `@${msg.fromName} [完成] 任务执行完成\n\n${result}`;
-      await codex.send(reply);
-
-      // 更新状态为空闲
-      await codex.work('任务完成', 100);
-      setTimeout(async () => {
-        await codex.work('', 0);
-      }, 3000);
-
-    } catch (err) {
-      console.error(`[Codex] 任务执行失败:`, err);
-
-      // 发送错误信息
-      const reply = `@${msg.fromName} [问题] 任务执行失败: ${err.message}`;
-      await codex.send(reply);
-
-      // 更新状态为空闲
-      await codex.work('任务失败', 0);
-    }
-  });
+  // 连接 WebSocket
+  await connectWebSocket();
 
   // 优雅退出
-  process.on('SIGINT', async () => {
-    console.log('[Codex] 正在断开连接...');
-    unlinkSync(PID_FILE);
-    await codex.disconnect();
+  const cleanup = async () => {
+    console.log('[CX] 正在断开连接...');
+    try { unlinkSync(PID_FILE); } catch {}
+    await cx.disconnect();
     process.exit(0);
-  });
+  };
 
-  process.on('SIGTERM', async () => {
-    console.log('[Codex] 正在断开连接...');
-    unlinkSync(PID_FILE);
-    await codex.disconnect();
-    process.exit(0);
-  });
+  process.on('SIGINT', cleanup);
+  process.on('SIGTERM', cleanup);
 
-  console.log('[Codex] 监听启动，等待任务...');
+  console.log('[CX] 监听启动，等待任务...');
 }
 
 main().catch(err => {
-  console.error('[Codex] 启动失败:', err);
+  console.error('[CX] 启动失败:', err);
   process.exit(1);
 });
