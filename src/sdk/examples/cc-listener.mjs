@@ -366,7 +366,20 @@ connectWebSocket();
 
 // 消息处理锁（防止并发处理多条消息）
 let isProcessing = false;
+let processingStartTime = 0;
 const pendingMessages = [];
+
+// 看门狗：isProcessing 卡死超过 3 分钟强制重置
+setInterval(() => {
+  if (isProcessing && Date.now() - processingStartTime > 180000) {
+    console.error('[CC] 消息处理卡死超过 3 分钟，强制重置 isProcessing');
+    isProcessing = false;
+    if (pendingMessages.length > 0) {
+      const nextMsg = pendingMessages.shift();
+      handleMessage(JSON.stringify({ type: 'new_message', payload: nextMsg }));
+    }
+  }
+}, 30000);
 
 async function handleMessage(raw) {
   const event = JSON.parse(raw);
@@ -410,9 +423,11 @@ async function handleMessage(raw) {
   // 如果正在处理消息，排队等待
   if (isProcessing) {
     pendingMessages.push(msg);
+    console.log(`[CC] 消息排队中，当前队列: ${pendingMessages.length}`);
     return;
   }
   isProcessing = true;
+  processingStartTime = Date.now();
 
   // 根据消息类型处理
   let reply = '';

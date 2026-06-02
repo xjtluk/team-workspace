@@ -112,7 +112,20 @@ let lastMessageTimestamp = historyMsgs.length > 0
 let lastReplyTime = 0;
 const COOLDOWN = 5000;
 let isProcessing = false;
+let processingStartTime = 0;
 const pendingMessages = [];
+
+// 看门狗：isProcessing 卡死超过 3 分钟强制重置
+setInterval(() => {
+  if (isProcessing && Date.now() - processingStartTime > 180000) {
+    console.error('[小马] 消息处理卡死超过 3 分钟，强制重置 isProcessing');
+    isProcessing = false;
+    if (pendingMessages.length > 0) {
+      const nextMsg = pendingMessages.shift();
+      handleMessage(JSON.stringify({ type: 'new_message', payload: nextMsg }));
+    }
+  }
+}, 30000);
 const recentMsgKeys = new Set();
 
 // ── Marvis 在线检测（即时版）──
@@ -232,6 +245,7 @@ async function handleMessage(raw) {
     return;
   }
   isProcessing = true;
+  processingStartTime = Date.now();
 
   // 标注消息来源频道，让 AI 知道上下文
   const channelTag = (msg.channel === 'dm') ? '[私信]' : '[群聊]';
