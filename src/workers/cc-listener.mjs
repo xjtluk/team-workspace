@@ -140,6 +140,30 @@ function cleanupTaskDocs() {
 setInterval(cleanupTaskDocs, 60 * 60 * 1000);
 console.log('[CC] 文档清理任务已启动（每小时检查一次）');
 
+// ── 进度动画：在 AI 生成期间定期更新 status，让 UI 保持活跃 ──
+const PROGRESS_STEPS = [
+  { activity: '正在思考...', progress: 30 },
+  { activity: '正在分析...', progress: 45 },
+  { activity: '正在组织回复...', progress: 60 },
+  { activity: '即将完成...', progress: 75 },
+];
+
+async function withProgress(agent, startActivity, startProgress, asyncFn) {
+  await agent.work(startActivity, startProgress);
+  let step = 0;
+  const timer = setInterval(async () => {
+    if (step < PROGRESS_STEPS.length) {
+      const s = PROGRESS_STEPS[step++];
+      try { await agent.work(s.activity, s.progress); } catch {}
+    }
+  }, 12000); // 每 12 秒更新一次
+  try {
+    return await asyncFn();
+  } finally {
+    clearInterval(timer);
+  }
+}
+
 // ── 消息协议解析 ──
 const MSG_PROTOCOL = {
   // 小马派发任务：@CC [任务] 描述 或 CC，[任务] 描述
@@ -450,8 +474,8 @@ async function handleMessage(raw) {
       const taskPrompt = `@CC [任务] ${protocol.task}\n\n请执行这个任务。完成后，用以下格式汇报：\n@小马 [完成] 任务描述 | 文件路径 | T:匹配 O:合规 K:有效\n\n如果遇到问题，用以下格式上报：\n@小马 [问题] 问题描述`;
 
       try {
-        await cc.work(`分析任务: ${protocol.task}`, 30);
-        const taskReply = await generateReply(SYSTEM_PROMPT, chatHistory.slice(-6, -1), taskPrompt, true);
+        const taskReply = await withProgress(cc, `分析任务: ${protocol.task}`, 30,
+          () => generateReply(SYSTEM_PROMPT, chatHistory.slice(-6, -1), taskPrompt, true));
         await cc.work(`整理结果: ${protocol.task}`, 70);
         reply = taskReply.trim();
 
@@ -501,8 +525,8 @@ async function handleMessage(raw) {
       const rejectPrompt = `@CC [打回] ${protocol.description} | ${protocol.reason}\n\n任务被打回，请根据原因修正。完成后重新汇报。`;
 
       try {
-        await cc.work(`分析修正: ${protocol.description}`, 30);
-        const rejectReply = await generateReply(SYSTEM_PROMPT, chatHistory.slice(-6, -1), rejectPrompt, true);
+        const rejectReply = await withProgress(cc, `分析修正: ${protocol.description}`, 30,
+          () => generateReply(SYSTEM_PROMPT, chatHistory.slice(-6, -1), rejectPrompt, true));
         await cc.work(`整理结果: ${protocol.description}`, 70);
         reply = rejectReply.trim();
 
@@ -524,8 +548,8 @@ async function handleMessage(raw) {
       const prompt = `${recent}\n\n${msg.fromName}："${msg.content}"\n\n这是 @CC 的消息。你需要回复吗？如果消息和你无关，回复 [SKIP]。如果需要执行任务或参与讨论，直接回复。\n\n重要：如果回复涉及团队协作、产品、项目进展等内容，请在回复开头 @小马 让它知晓。如果只是技术细节确认，直接回复 @KK 即可。`;
 
       try {
-        await cc.work('正在思考...', 30);
-        const aiReply = await generateReply(SYSTEM_PROMPT, chatHistory.slice(-6, -1), prompt, false);
+        const aiReply = await withProgress(cc, '正在思考...', 30,
+          () => generateReply(SYSTEM_PROMPT, chatHistory.slice(-6, -1), prompt, false));
         const clean = aiReply.trim();
 
         if (clean.includes('[SKIP]') || clean === 'SKIP' || clean.length < 2) {
