@@ -22,12 +22,12 @@ const ROUTER_URL = 'http://127.0.0.1:3456/v1';
 process.env.AI_BACKEND = 'openai';
 process.env.OPENAI_BASE_URL = ROUTER_URL;
 process.env.OPENAI_API_KEY = 'any-string-is-ok';  // 路由器不需要真实 key
-process.env.OPENAI_MODEL = 'deepseek-ai/DeepSeek-V4-Flash';  // 路由器根据此 model 名分流
+process.env.OPENAI_MODEL = 'deepseek-ai/DeepSeek-V4-Pro';  // 路由器根据此 model 名分流
 
 console.log('[CX] 走 claude-code-router 统一路由');
 console.log('[CX] OPENAI_BASE_URL:', process.env.OPENAI_BASE_URL);
 console.log('[CX] OPENAI_MODEL:', process.env.OPENAI_MODEL);
-console.log('[CX] 降级链: 硅基V4-Flash → 火山V4-Flash → MiMo 2.5 Pro');
+console.log('[CX] 降级链: 硅基V4-Pro → 火山V4-Pro → MiMo 2.5 Pro');
 
 // 项目路径：命令行参数 > 环境变量 > 默认值
 if (process.argv[2]) {
