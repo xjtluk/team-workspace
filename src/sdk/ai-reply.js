@@ -555,9 +555,11 @@ async function _generateReply(systemPrompt, history, userMessage, useTools, mode
     if (result.type === 'tool_calls') {
       // 添加 assistant 消息（包含工具调用）
       if (config.backend === 'openai') {
+        // 清理文本中的工具调用标签，防止模型在后续轮次模仿输出
+        const cleanText = cleanToolCallTags(result.text) || null;
         messages.push({
           role: 'assistant',
-          content: result.text || null,
+          content: cleanText,
           tool_calls: result.toolCalls.map(tc => ({
             id: tc.id,
             type: 'function',
@@ -570,7 +572,7 @@ async function _generateReply(systemPrompt, history, userMessage, useTools, mode
       } else {
         // Anthropic 格式
         const assistantContent = [];
-        if (result.text) assistantContent.push({ type: 'text', text: result.text });
+        if (result.text) assistantContent.push({ type: 'text', text: cleanToolCallTags(result.text) });
         result.toolCalls.forEach(tc => {
           assistantContent.push({ type: 'tool_use', id: tc.id, name: tc.name, input: tc.input });
         });
