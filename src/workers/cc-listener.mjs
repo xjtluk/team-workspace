@@ -79,6 +79,9 @@ function checkSingleInstance() {
 
 checkSingleInstance();
 
+// Marvis 心跳检测：收到 from=xiaoma 的 [hb] 消息时更新时间戳
+let marvisLastSeen = Date.now();
+
 function cleanupPidFile() {
   try {
     if (existsSync(PID_FILE)) {
@@ -414,6 +417,29 @@ async function handleMessage(raw) {
   if (event.type !== 'new_message') return;
   const msg = event.payload;
   if (msg.from === 'cc') return;
+
+  // Marvis 心跳检测 + xiaoma-ai 过滤
+  if (msg.from === 'xiaoma') {
+    if (/\[hb\]/.test(msg.content)) {
+      marvisLastSeen = Date.now();
+      console.log('[CC] 收到 Marvis 心跳');
+      return;
+    }
+    if (/\[上线\]/.test(msg.content)) {
+      marvisLastSeen = Date.now();
+      console.log('[CC] Marvis 上线');
+      return;
+    }
+    if (/\[下线\]/.test(msg.content)) {
+      marvisLastSeen = 0;
+      console.log('[CC] Marvis 下线');
+      return;
+    }
+  }
+  if (msg.from === 'xiaoma-ai' && Date.now() - marvisLastSeen < 10 * 60 * 1000) {
+    console.log('[CC] Marvis 在线，过滤 xiaoma-ai 消息');
+    return;
+  }
 
   // 去重（用消息 ID）
   if (recentMsgKeys.has(msg.id)) return;

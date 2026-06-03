@@ -5,13 +5,15 @@ import { ChatInput } from './ChatInput.jsx';
 const AVATARS = {
   kk: '👑',
   cc: '/assets/clawd.png',
-  xiaoma: '🐴',
+  xiaoma: '/assets/xiaoma.png',
+  'xiaoma-ai': '🐴',
 };
 
 const ALIGN = {
   kk: 'right',
   cc: 'left',
   xiaoma: 'left',
+  'xiaoma-ai': 'left',
 };
 
 // Agent 状态显示文案

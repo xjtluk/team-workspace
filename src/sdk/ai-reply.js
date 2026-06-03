@@ -4,7 +4,7 @@
  */
 import { execSync } from 'child_process';
 import { readFileSync, writeFileSync, readdirSync, existsSync, statSync } from 'fs';
-import { join } from 'path';
+import { join, resolve, relative, isAbsolute } from 'path';
 
 // 懒加载配置 — 在函数调用时读取环境变量，而不是模块加载时
 function getConfig() {
@@ -24,8 +24,52 @@ function getConfig() {
   return { backend, anthropicBaseUrl, anthropicApiKey, anthropicModel, openaiBaseUrl, openaiApiKey, openaiModel };
 }
 
+// ── 安全验证函数 ──
+const BLOCKED_BASH_PATTERNS = [
+  /\brm\s+-rf\s+[\/~]/,           // rm -rf / or ~
+  /\bmkfs\b/,                      // 格式化磁盘
+  /\bdd\s+.*of=\/dev/,            // dd 写设备
+  /\b:(){ :\|:& };:/,             // fork bomb
+  /\bshutdown\b/,                  // 关机
+  /\breboot\b/,                    // 重启
+  /\bchmod\s+777/,                 // 开放权限
+  /\bchown\b/,                     // 改变所有者
+  />\s*\/etc\//,                   // 写入 /etc
+  /\bcurl\b.*\|\s*(ba)?sh/,       // curl | sh/bash
+  /\bwget\b.*\|\s*(ba)?sh/,       // wget | sh/bash
+  /\b(eval|exec)\s*\(/,           // eval/exec 调用
+];
+
+function validatePath(filePath, projectDir) {
+  if (!filePath || typeof filePath !== 'string') {
+    return { ok: false, error: '路径为空或无效' };
+  }
+  if (filePath.includes('..')) {
+    return { ok: false, error: '路径包含 .. 遍历，已拒绝' };
+  }
+  const baseDir = resolve(projectDir);
+  const targetPath = isAbsolute(filePath) ? resolve(filePath) : resolve(baseDir, filePath);
+  const rel = relative(baseDir, targetPath);
+  if (rel.startsWith('..') || isAbsolute(rel)) {
+    return { ok: false, error: `路径越界: ${filePath} 不在项目目录内` };
+  }
+  return { ok: true, resolved: targetPath };
+}
+
+function validateBashCommand(command) {
+  if (!command || typeof command !== 'string') {
+    return { ok: false, error: '命令为空' };
+  }
+  for (const pattern of BLOCKED_BASH_PATTERNS) {
+    if (pattern.test(command)) {
+      return { ok: false, error: `命令匹配危险模式 (${pattern.source})，已拒绝` };
+    }
+  }
+  return { ok: true };
+}
+
 // ── 超时与重试工具 ──
-const FETCH_TIMEOUT = 30000; // 30 秒超时
+const FETCH_TIMEOUT = 60000; // 60 秒超时（长上下文需要更多时间）
 const MAX_RETRIES = 3;
 const RETRY_ENABLED = process.env.AI_RETRY !== 'false'; // 重试开关，默认开启
 
@@ -368,12 +412,14 @@ async function callAnthropic(systemPrompt, messages, useTools) {
 
 // 执行工具
 function executeTool(name, input) {
-  const cwd = input.cwd || 'D:/BKS/projects/team-workspace';
+  const projectDir = input.cwd || process.env.PROJECT_DIR || 'D:/BKS/projects/team-workspace';
   try {
     switch (name) {
       case 'bash': {
+        const check = validateBashCommand(input.command);
+        if (!check.ok) return `安全拒绝: ${check.error}`;
         const result = execSync(input.command, {
-          cwd,
+          cwd: projectDir,
           encoding: 'utf8',
           timeout: 30000,
           windowsHide: true,
@@ -381,15 +427,24 @@ function executeTool(name, input) {
         return result.substring(0, 3000);
       }
       case 'read_file': {
-        const content = readFileSync(input.path, 'utf8');
-        return content.substring(0, 5000);
+        const check = validatePath(input.path, projectDir);
+        if (!check.ok) return `安全拒绝: ${check.error}`;
+        const content = readFileSync(check.resolved, 'utf8');
+        if (content.length > 5000) {
+          return content.substring(0, 5000) + `\n\n[TRUNCATED: showing first 5000 of ${content.length} chars]`;
+        }
+        return content;
       }
       case 'write_file': {
-        writeFileSync(input.path, input.content, 'utf8');
+        const check = validatePath(input.path, projectDir);
+        if (!check.ok) return `安全拒绝: ${check.error}`;
+        writeFileSync(check.resolved, input.content, 'utf8');
         return `文件已写入: ${input.path}`;
       }
       case 'list_files': {
-        const entries = readdirSync(input.path, { withFileTypes: true });
+        const check = validatePath(input.path || '.', projectDir);
+        if (!check.ok) return `安全拒绝: ${check.error}`;
+        const entries = readdirSync(check.resolved, { withFileTypes: true });
         let result = entries.map(e => (e.isDirectory() ? '[DIR] ' : '') + e.name).join('\n');
         if (input.pattern) {
           result = result.split('\n').filter(l => l.includes(input.pattern)).join('\n');
@@ -397,7 +452,11 @@ function executeTool(name, input) {
         return result.substring(0, 2000);
       }
       case 'search_code': {
-        const result = execSync(`grep -r "${input.pattern}" "${input.path}" --include="*.{js,jsx,md,json,css}" -l 2>/dev/null || echo "无匹配"`, {
+        const check = validatePath(input.path || '.', projectDir);
+        if (!check.ok) return `安全拒绝: ${check.error}`;
+        // 转义 pattern 中的特殊字符防止命令注入
+        const safePattern = (input.pattern || '').replace(/["`$\\]/g, '');
+        const result = execSync(`grep -r "${safePattern}" "${check.resolved}" --include="*.js" --include="*.jsx" --include="*.md" --include="*.json" --include="*.css" -l 2>/dev/null || echo "无匹配"`, {
           encoding: 'utf8',
           timeout: 10000,
           windowsHide: true,
@@ -418,11 +477,12 @@ function executeTool(name, input) {
  * @param {Array} history - 历史消息
  * @param {string} userMessage - 用户消息
  * @param {boolean} useTools - 是否启用工具（默认 true）
+ * @param {object} modelOverride - 可选的模型配置覆盖 { backend, openaiBaseUrl, openaiApiKey, openaiModel }
  */
-export async function generateReply(systemPrompt, history, userMessage, useTools = true) {
-  // 整体超时保护（120 秒）
-  const TASK_TIMEOUT = 120000;
-  const taskPromise = _generateReply(systemPrompt, history, userMessage, useTools);
+export async function generateReply(systemPrompt, history, userMessage, useTools = true, modelOverride) {
+  // 整体超时保护（180 秒，工具调用轮次多时需要更长时间）
+  const TASK_TIMEOUT = 180000;
+  const taskPromise = _generateReply(systemPrompt, history, userMessage, useTools, modelOverride);
   const timeoutPromise = new Promise((_, reject) =>
     setTimeout(() => reject(new Error('任务超时 (120s)')), TASK_TIMEOUT)
   );
@@ -444,8 +504,12 @@ function cleanToolCallTags(text) {
     .trim();
 }
 
-async function _generateReply(systemPrompt, history, userMessage, useTools) {
-  const config = getConfig();
+async function _generateReply(systemPrompt, history, userMessage, useTools, modelOverride) {
+  const baseConfig = getConfig();
+  // 如果传入 modelOverride，合并覆盖模型相关配置
+  const config = modelOverride
+    ? { ...baseConfig, ...modelOverride }
+    : baseConfig;
   const messages = [];
 
   // 加入历史

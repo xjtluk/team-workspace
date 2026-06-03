@@ -14,12 +14,17 @@
     "pm2:stop": "pm2 stop ecosystem.config.cjs",
     "pm2:restart": "pm2 restart ecosystem.config.cjs",
     "pm2:logs": "pm2 logs",
-    "pm2:status": "pm2 status"
+    "pm2:status": "pm2 status",
+    "watchdog": "node scripts/watchdog.mjs",
+    "watchdog:no-cx": "node scripts/watchdog.mjs --no-cx",
+    "backup": "node scripts/backup-db.mjs",
+    "backup:restore": "node scripts/backup-db.mjs --restore"
   },
   "dependencies": {
     "@preact/signals": "^2.0.0",
     "@volcengine/openapi": "^1.36.2",
     "dompurify": "^3.2.0",
+    "dotenv": "^17.4.2",
     "express": "^4.21.0",
     "marked": "^15.0.0",
     "preact": "^10.25.0",

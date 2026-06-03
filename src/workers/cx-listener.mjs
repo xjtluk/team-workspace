@@ -49,6 +49,20 @@ checkSingleInstance();
 // ── 项目路径 ──
 const PROJECT_DIR = process.env.PROJECT_DIR || 'D:/BKS/projects/team-workspace';
 console.log(`[CX] 项目目录: ${PROJECT_DIR}`);
+console.log(`[CX] 环境变量检查: AI_BACKEND=${process.env.AI_BACKEND}, OPENAI_MODEL=${process.env.OPENAI_MODEL}, OPENAI_BASE_URL=${process.env.OPENAI_BASE_URL}`);
+
+// 环境变量兜底：如果 AI_BACKEND 未设置，强制使用 OpenAI 兼容模式（SiliconFlow）
+if (!process.env.AI_BACKEND) {
+  console.warn('[CX] 警告: AI_BACKEND 未设置，使用默认 SiliconFlow 配置');
+  process.env.AI_BACKEND = 'openai';
+  process.env.OPENAI_BASE_URL = process.env.OPENAI_BASE_URL || 'https://api.siliconflow.cn/v1';
+  process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY || process.env.SILICONFLOW_API_KEY || '';
+  process.env.OPENAI_MODEL = process.env.OPENAI_MODEL || 'deepseek-ai/DeepSeek-V4-Pro';
+  if (!process.env.OPENAI_API_KEY) {
+    console.error('[CX] 错误: 无可用 API Key，请检查 .env 文件或启动脚本');
+    process.exit(1);
+  }
+}
 
 // ── 加载记忆 ──
 let teamMemory = getCache('team_memory');
@@ -107,9 +121,9 @@ const MODEL_NORMAL = {
   apiKey: process.env.OPENAI_API_KEY || '',
 };
 const MODEL_HARD = {
-  model: 'glm-4.7',
-  baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-  apiKey: process.env.ZHIPU_API_KEY || '441fab8e01b14ecea3e499521e25a4b5.4BqBiIi5jHrGkFvA',
+  model: 'ep-20260602221934-5wjk7',  // 火山方舟 GLM-4.7 端点
+  baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+  apiKey: process.env.ARK_API_KEY || '',
 };
 
 // ── 系统提示词 ──
@@ -215,22 +229,20 @@ async function handleMessage(raw) {
   console.log(`[CX] 收到消息: ${content.substring(0, 80)}`);
 
   try {
-    // 检测 [困难] 标记，动态切换模型
+    // 检测 [困难] 标记，通过 modelOverride 切换模型（不修改 process.env，避免并发竞态）
     const isHardTask = MSG_PROTOCOL.HARD_TASK.test(content);
-    const savedConfig = {
-      model: process.env.OPENAI_MODEL,
-      baseUrl: process.env.OPENAI_BASE_URL,
-      apiKey: process.env.OPENAI_API_KEY,
-    };
+    const modelOverride = isHardTask ? {
+      backend: 'openai',
+      openaiModel: MODEL_HARD.model,
+      openaiBaseUrl: MODEL_HARD.baseUrl,
+      openaiApiKey: MODEL_HARD.apiKey,
+    } : undefined;
     if (isHardTask) {
-      process.env.OPENAI_MODEL = MODEL_HARD.model;
-      process.env.OPENAI_BASE_URL = MODEL_HARD.baseUrl;
-      process.env.OPENAI_API_KEY = MODEL_HARD.apiKey;
-      console.log(`[CX] 检测到 [困难] 标记，切换到: ${MODEL_HARD.model} (${MODEL_HARD.baseUrl})`);
+      console.log(`[CX] 检测到 [困难] 标记，使用: ${MODEL_HARD.model} (${MODEL_HARD.baseUrl})`);
     }
 
     // 加载聊天历史
-    const chatHistory = (await loadChatHistory(50)) || [];
+    const chatHistory = (await loadChatHistory(20)) || [];
     if (!Array.isArray(chatHistory)) {
       console.error('[CX] chatHistory 不是数组，已重置为空数组');
       chatHistory = [];
@@ -249,16 +261,13 @@ async function handleMessage(raw) {
       prompt = `@CX 的消息：${content}\n\n请根据上下文回复。`;
     }
 
-    // 生成回复
+    // 生成回复（启用工具调用，CX 需要 bash/read_file/write_file 等工具执行任务）
+    // modelOverride 直接传入，无需修改/恢复 process.env
     const aiReply = await withProgress(cx, '正在分析任务...', 30,
-      () => generateReply(SYSTEM_PROMPT, chatHistory, prompt, false));
+      () => generateReply(SYSTEM_PROMPT, chatHistory, prompt, true, modelOverride));
 
-    // 恢复原始模型
     if (isHardTask) {
-      process.env.OPENAI_MODEL = savedConfig.model;
-      process.env.OPENAI_BASE_URL = savedConfig.baseUrl;
-      process.env.OPENAI_API_KEY = savedConfig.apiKey;
-      console.log(`[CX] 任务完成，恢复模型: ${savedConfig.model}`);
+      console.log(`[CX] [困难] 任务完成`);
     }
 
     // 清洗并发送

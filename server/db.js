@@ -22,6 +22,11 @@ export async function initDB() {
 
   db = buffer ? new SQL.Database(buffer) : new SQL.Database();
 
+  // 性能优化：启用 WAL 模式 + busy_timeout
+  db.run('PRAGMA journal_mode=WAL');
+  db.run('PRAGMA busy_timeout=5000');
+  db.run('PRAGMA synchronous=NORMAL'); // WAL 模式下 NORMAL 即可
+
   db.run(`
     CREATE TABLE IF NOT EXISTS agents (
       id              TEXT PRIMARY KEY,
@@ -64,6 +69,8 @@ export async function initDB() {
 
   db.run(`CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(channel)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_messages_channel_time ON messages(channel, created_at)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_messages_from ON messages(from_id)`);
 
   db.run(`
     CREATE TABLE IF NOT EXISTS status_log (
