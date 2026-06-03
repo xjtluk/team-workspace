@@ -16,17 +16,14 @@ if (process.argv[2]) {
   process.env.PROJECT_DIR = process.argv[2];
 }
 
-// 走 claude-code-router 统一路由
-const ROUTER_URL = 'http://127.0.0.1:3456/v1';
-
+// 直连 SiliconFlow（路由器 OpenAI 端点不支持动态路由）
 process.env.AI_BACKEND = 'openai';
-process.env.OPENAI_BASE_URL = ROUTER_URL;
-process.env.OPENAI_API_KEY = 'any-string-is-ok';
+process.env.OPENAI_BASE_URL = 'https://api.siliconflow.cn/v1';
+process.env.OPENAI_API_KEY = process.env.SILICONFLOW_API_KEY || 'sk-kwmefeifzfkssrwsyrvrselxbxmorhzwqhekbnhrvncxpccx';
 process.env.OPENAI_MODEL = 'deepseek-ai/DeepSeek-V4-Flash';
 
-console.log('[小马] 走 claude-code-router 统一路由');
-console.log('[小马] OPENAI_BASE_URL:', process.env.OPENAI_BASE_URL);
+console.log('[小马] 直连 SiliconFlow');
 console.log('[小马] OPENAI_MODEL:', process.env.OPENAI_MODEL);
-console.log('[小马] 降级链: 硅基V4-Flash → 火山V4-Flash → MiMo 2.5 Pro');
+console.log('[小马] 模型: DeepSeek V4 Flash（轻量快速，项目管理够用）');
 
 await import('./src/sdk/examples/xiaoma-listener.mjs');

@@ -101,8 +101,16 @@ const MSG_PROTOCOL = {
 };
 
 // ── 模型配置 ──
-const MODEL_NORMAL = 'deepseek-ai/DeepSeek-V4-Pro';
-const MODEL_HARD = 'GLM-4.7';  // 困难任务用智谱 GLM-4.7（500万 token）
+const MODEL_NORMAL = {
+  model: process.env.OPENAI_MODEL || 'deepseek-ai/DeepSeek-V4-Pro',
+  baseUrl: process.env.OPENAI_BASE_URL || 'https://api.siliconflow.cn/v1',
+  apiKey: process.env.OPENAI_API_KEY || '',
+};
+const MODEL_HARD = {
+  model: 'glm-4.7',
+  baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+  apiKey: process.env.ZHIPU_API_KEY || '441fab8e01b14ecea3e499521e25a4b5.4BqBiIi5jHrGkFvA',
+};
 
 // ── 系统提示词 ──
 const SYSTEM_PROMPT = `你是 CX（Codex），BKS 研发部的代码工程师。
@@ -209,10 +217,16 @@ async function handleMessage(raw) {
   try {
     // 检测 [困难] 标记，动态切换模型
     const isHardTask = MSG_PROTOCOL.HARD_TASK.test(content);
-    const originalModel = process.env.OPENAI_MODEL;
+    const savedConfig = {
+      model: process.env.OPENAI_MODEL,
+      baseUrl: process.env.OPENAI_BASE_URL,
+      apiKey: process.env.OPENAI_API_KEY,
+    };
     if (isHardTask) {
-      process.env.OPENAI_MODEL = MODEL_HARD;
-      console.log(`[CX] 检测到 [困难] 标记，切换模型: ${MODEL_HARD}`);
+      process.env.OPENAI_MODEL = MODEL_HARD.model;
+      process.env.OPENAI_BASE_URL = MODEL_HARD.baseUrl;
+      process.env.OPENAI_API_KEY = MODEL_HARD.apiKey;
+      console.log(`[CX] 检测到 [困难] 标记，切换到: ${MODEL_HARD.model} (${MODEL_HARD.baseUrl})`);
     }
 
     // 加载聊天历史
@@ -241,8 +255,10 @@ async function handleMessage(raw) {
 
     // 恢复原始模型
     if (isHardTask) {
-      process.env.OPENAI_MODEL = originalModel;
-      console.log(`[CX] 任务完成，恢复模型: ${originalModel}`);
+      process.env.OPENAI_MODEL = savedConfig.model;
+      process.env.OPENAI_BASE_URL = savedConfig.baseUrl;
+      process.env.OPENAI_API_KEY = savedConfig.apiKey;
+      console.log(`[CX] 任务完成，恢复模型: ${savedConfig.model}`);
     }
 
     // 清洗并发送
