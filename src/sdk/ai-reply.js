@@ -250,13 +250,23 @@ async function callOpenAI(systemPrompt, messages, useTools) {
     };
   }
 
-  return { type: 'text', text: choice.message?.content || '' };
+  const textContent = choice.message?.content || '';
+
+  // DeepSeek 兼容：文本中包含 XML 工具调用标签时，解析执行
+  if (textContent && textContent.includes('<tool_call>')) {
+    const xmlCalls = parseXmlToolCalls(textContent);
+    if (xmlCalls.length > 0) {
+      console.log(`[AI] 从 OpenAI 响应文本中解析到 ${xmlCalls.length} 个 XML 工具调用`);
+      return {
+        type: 'tool_calls',
+        toolCalls: xmlCalls,
+        text: textContent,
+      };
+    }
+  }
+
+  return { type: 'text', text: textContent };
 }
-
-// 解析工具调用（支持多种格式）
-// 格式A: <tool_call>{"name":"bash","arguments":{...}}</tool_call>
-// 格式B: <tool_call>\n<function=bash>\n<parameter=command>echo hello
-
 
 // 解析工具调用（支持多种格式）
 function parseXmlToolCalls(text) {
