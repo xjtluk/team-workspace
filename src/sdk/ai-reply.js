@@ -502,17 +502,14 @@ export async function generateReply(systemPrompt, history, userMessage, useTools
 // 清洗工具调用标签（防止泄漏到群聊）
 function cleanToolCallTags(text) {
   if (!text) return '';
-  const oc = String.fromCharCode(60);
-  const cc = String.fromCharCode(62);
-  const openTag = oc + 'tool_call' + cc;
-  const closeTag = oc + '/tool_call' + cc;
-  const openEsc = openTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const closeEsc = closeTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return text
-    .replace(new RegExp(openEsc + '[\\s\\S]*?' + closeEsc, 'g'), '')
+    .replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
+    .replace(/<think>[\s\S]*?<\/think>/g, '')
+    .replace(/[＜]DSML[＞]tool_calls>[\s\S]*?<\/[＜]DSML[＞]tool_calls>/g, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
+
 
 async function _generateReply(systemPrompt, history, userMessage, useTools, modelOverride) {
   const baseConfig = getConfig();
