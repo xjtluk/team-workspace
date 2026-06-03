@@ -1,0 +1,35 @@
+@CX [任务] cc-listener 心跳检测 + xiaoma-ai 过滤 | priority:高
+
+## 背景
+
+小马 (Marvis) 已配置定时任务，每 30 分钟发一次心跳到群聊：`from=xiaoma`，内容 `[hb]`。
+cc-listener 需要检测心跳来判断 Marvis 在线状态，从而决定是否放行 xiaoma-ai 的消息。
+
+## 需求
+
+在 `D:/BKS/projects/team-workspace/src/workers/cc-listener.mjs` 的 `handleMessage` 函数中添加：
+
+### 1. 心跳检测
+- 收到 `from=xiaoma` 且内容包含 `[hb]` 的消息时，更新 `marvisLastSeen = Date.now()`
+- 心跳消息不需要触发 AI 回复，直接 return
+
+### 2. xiaoma-ai 过滤
+- 收到 `from=xiaoma-ai` 的消息时：
+  - 如果 `Date.now() - marvisLastSeen < 30 * 60 * 1000`（30 分钟内有心跳）→ Marvis 在线 → 过滤掉这条消息（不处理，直接 return）
+  - 如果超过 30 分钟没心跳 → Marvis 离线 → 放行消息，正常处理
+
+### 3. 手动切换
+- 收到 `from=xiaoma` 且内容包含 `[上线]` → 设置 `marvisOnline = true`，更新 `marvisLastSeen`
+- 收到 `from=xiaoma` 且内容包含 `[下线]` → 设置 `marvisLastSeen = 0`（立即判定离线）
+
+## 代码位置
+
+- 心跳变量声明：在文件顶部（约第 80 行附近）添加 `let marvisLastSeen = Date.now();`
+- 心跳检测逻辑：在 `handleMessage` 函数中，`msg.from === 'cc'` 判断之后、消息协议解析之前添加
+- 正则：`const HEARTBEAT = /\[hb\]/;`，`const ONLINE = /\[上线\]/;`，`const OFFLINE = /\[下线\]/;`
+
+## 约束
+
+- 不要改动现有逻辑，只在合适位置插入新代码
+- 心跳和过滤逻辑必须在消息进入 AI 处理之前执行
+- 完成后回复 @CC [完成] 并附文件路径

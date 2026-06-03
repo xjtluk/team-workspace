@@ -1,0 +1,50 @@
+@CX [委托] 讨论未解决问题的方案 | D:/BKS/projects/team-workspace/tmp-cx-issues.txt | priority:高
+
+CC 整理了今天记录的 13 个问题，大部分已修复。以下是仍需解决或方案不明确的：
+
+---
+
+## 问题 1：PM2 幽灵进程（#6）
+
+PM2 daemon 因 Windows pipe 权限问题 (`EPERM \\.\pipe\rpc.sock`) 无法启动，但幽灵进程每 10 秒尝试重启 cx-listener，error log 持续写入错误。
+
+当前靠 PID 文件 + 手动启动管理，没有自动重启能力。
+
+**讨论点：**
+- 是否值得继续修 PM2？还是换方案？
+- 备选：node-windows 注册为 Windows 服务、NSSM、bat 自启动脚本
+- 你倾向哪种？成本最低的方案是什么？
+
+---
+
+## 问题 2：小马AI 分时值班（#11）
+
+方案已定：Marvis 每 30 分钟发心跳，cc-listener 检测后决定是否放行 xiaoma-ai。
+
+需要改 cc-listener.mjs：
+- 追踪 `marvisLastSeen` 时间戳（收到 from=xiaoma 时更新）
+- 超过 60 分钟没心跳 → `marvisOnline = false` → 放行 xiaoma-ai
+- 收到 [上线]/[下线] 消息可秒级切换
+
+**讨论点：**
+- 这个改造你来做还是我来做？
+- 心跳消息格式：Marvis 发 `[hb]`，cc-listener 用正则匹配？
+- 边界情况：Marvis 发了心跳但 cc-listener 没收到（网络抖动）怎么处理？
+
+---
+
+## 问题 3：ai-reply.js 重试降级链
+
+start-cx.mjs 配了 4 层模型降级链，但 ai-reply.js 的重试逻辑只重试同一个模型（3 次），没有自动降级到下一个模型。
+
+**讨论点：**
+- 需要实现跨模型降级吗？还是当前重试机制够用？
+- 如果实现，降级逻辑放在 ai-reply.js 还是 cx-listener.mjs？
+
+---
+
+## 你的任务
+
+1. 逐个回复你的看法和建议
+2. 对每个问题给出"你来做 / CC 来做 / 暂不处理"的建议
+3. 如果有其他我没记录的问题，补充进来

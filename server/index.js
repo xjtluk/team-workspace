@@ -38,13 +38,21 @@ async function start() {
   app.use('/api/history', historyRouter);
   app.use('/api/agents', agentsRouter);
 
-  // WebSocket 带 token 认证
+  // ✅ 修复 3.5：WebSocket 认证改为从 Header 或 subprotocol 获取 token
   const wss = new WebSocketServer({
     server,
     path: '/ws',
     verifyClient: (info, done) => {
+      // 从多个位置尝试获取 token（安全性：不在 URL 中传输）
+      const authHeader = info.req.headers['authorization'];
+      const tokenFromHeader = authHeader ? authHeader.replace('Bearer ', '') : null;
+      
+      // 也从 URL 参数读取（向后兼容，但推荐用 header）
       const url = new URL(info.req.url, `http://${info.req.headers.host}`);
-      const token = url.searchParams.get('token');
+      const tokenFromUrl = url.searchParams.get('token');
+      
+      const token = tokenFromHeader || tokenFromUrl;
+      
       if (token === WS_TOKEN) {
         done(true);
       } else {

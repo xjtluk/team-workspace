@@ -367,6 +367,7 @@ async function connectWebSocket() {
       console.warn('[小马] 获取 WS Token 失败，使用空 token:', e.message);
     }
   }
+  // WebSocket 认证：ws 库 headers 选项不兼容，改用 URL 参数传递 token
   ws = new WebSocket(`ws://localhost:3210/ws?token=${wsToken}`);
 
   ws.on('open', async () => {

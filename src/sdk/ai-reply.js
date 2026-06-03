@@ -195,8 +195,8 @@ const TOOLS = [
 ];
 
 // OpenAI 兼容 API 调用（本地模型）
-async function callOpenAI(systemPrompt, messages, useTools) {
-  const config = getConfig();
+async function callOpenAI(systemPrompt, messages, useTools, config) {
+  config = config || getConfig();
   console.log('[AI] callOpenAI: using model', config.openaiModel);
   const body = {
     model: config.openaiModel,
@@ -343,8 +343,8 @@ function fixTruncatedUtf8(text) {
 }
 
 // Anthropic API 调用
-async function callAnthropic(systemPrompt, messages, useTools) {
-  const config = getConfig();
+async function callAnthropic(systemPrompt, messages, useTools, config) {
+  config = config || getConfig();
   const body = {
     model: config.anthropicModel,
     max_tokens: useTools ? 4096 : 2048,
@@ -530,8 +530,10 @@ async function _generateReply(systemPrompt, history, userMessage, useTools, mode
 
   messages.push({ role: 'user', content: userMessage });
 
-  // 选择后端
-  const callAPI = config.backend === 'openai' ? callOpenAI : callAnthropic;
+  // 选择后端（传递合并后的 config，避免 callOpenAI/callAnthropic 内部 getConfig() 读到错误值）
+  const callAPI = config.backend === 'openai'
+    ? (sys, msgs, tools) => callOpenAI(sys, msgs, tools, config)
+    : (sys, msgs, tools) => callAnthropic(sys, msgs, tools, config);
 
   // 如果不使用工具，直接返回文本回复
   if (!useTools) {

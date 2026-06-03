@@ -18,6 +18,15 @@ import { writeFileSync, existsSync, readFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import WebSocket from 'ws';
 
+// ✅ 修复：添加 dotenv 支持，确保直接运行时也能加载 .env
+try {
+  const dotenv = await import('dotenv');
+  dotenv.config();
+  console.log('[CX] ✅ 已加载 .env 配置');
+} catch {
+  console.log('[CX] ℹ️ dotenv 未安装，跳过 .env 加载');
+}
+
 // ── 单实例保护 ──
 const PID_FILE = join(process.cwd(), '.cx-listener.pid');
 
@@ -56,12 +65,29 @@ if (!process.env.AI_BACKEND) {
   console.warn('[CX] 警告: AI_BACKEND 未设置，使用默认 SiliconFlow 配置');
   process.env.AI_BACKEND = 'openai';
   process.env.OPENAI_BASE_URL = process.env.OPENAI_BASE_URL || 'https://api.siliconflow.cn/v1';
-  process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY || process.env.SILICONFLOW_API_KEY || '';
-  process.env.OPENAI_MODEL = process.env.OPENAI_MODEL || 'deepseek-ai/DeepSeek-V4-Pro';
-  if (!process.env.OPENAI_API_KEY) {
-    console.error('[CX] 错误: 无可用 API Key，请检查 .env 文件或启动脚本');
+  
+  // ✅ 修复 3.4：多级 fallback 获取 API Key
+  const apiKey = process.env.OPENAI_API_KEY 
+    || process.env.SILICONFLOW_API_KEY 
+    || process.env.ARK_API_KEY
+    || process.env.ZHIPU_API_KEY_CX;
+  
+  if (!apiKey) {
+    console.error('[CX] ❌ 错误: 无可用 API Key');
+    console.error('[CX] 请确保以下至少一个环境变量已设置:');
+    console.error('[CX]   - OPENAI_API_KEY');
+    console.error('[CX]   - SILICONFLOW_API_KEY');
+    console.error('[CX]   - ARK_API_KEY');
+    console.error('[CX]   - ZHIPU_API_KEY_CX');
+    console.error('[CX] 或在 .env 文件中配置');
     process.exit(1);
   }
+  
+  process.env.OPENAI_API_KEY = apiKey;
+  process.env.OPENAI_MODEL = process.env.OPENAI_MODEL || 'deepseek-ai/DeepSeek-V4-Pro';
+  
+  console.log(`[CX] ✅ 使用 API Key 前缀: ${apiKey.substring(0, 10)}...`);
+  console.log(`[CX] ✅ 使用模型: ${process.env.OPENAI_MODEL}`);
 }
 
 // ── 加载记忆 ──
@@ -165,16 +191,27 @@ ${sharedMemory}
 // ── 清洗工具调用标签 ──
 function cleanToolCallTags(text) {
   if (!text) return '';
-  const oc = String.fromCharCode(60);
-  const cc = String.fromCharCode(62);
-  const openTag = oc + 'tool_call' + cc;
-  const closeTag = oc + '/tool_call' + cc;
-  const openEsc = openTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const closeEsc = closeTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return text
-    .replace(new RegExp(openEsc + '[\\s\\S]*?' + closeEsc, 'g'), '')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+  let result = text;
+
+  // 清洗 <tool_call>...</tool_call> 格式
+  result = result.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '');
+
+  // 清洗 DeepSeek DSML 格式：<｜DSML｜tool_calls>...</｜DSML｜tool_calls>
+  // 使用 [\s\S]*? 匹配所有内容（含换行），非贪婪
+  result = result.replace(/<｜DSML｜tool_calls>[\s\S]*?<｜\/DSML｜tool_calls>/g, '');
+
+  // 清洗单独的 DSML 标签（invoke/parameter 等）
+  result = result.replace(/<｜DSML｜[^>]*>/g, '');
+  result = result.replace(/<｜\/DSML｜[^>]*>/g, '');
+
+  // 清洗残留的 parameter> 等片段
+  result = result.replace(/parameter>/g, '');
+  result = result.replace(/invoke>/g, '');
+
+  // 清洗空行
+  result = result.replace(/\n{3,}/g, '\n\n').trim();
+
+  return result;
 }
 
 // ── 消息处理 ──
@@ -230,13 +267,19 @@ async function handleMessage(raw) {
 
   try {
     // 检测 [困难] 标记，通过 modelOverride 切换模型（不修改 process.env，避免并发竞态）
+    // 所有消息都使用 modelOverride，避免 getConfig() 读到错误的环境变量
     const isHardTask = MSG_PROTOCOL.HARD_TASK.test(content);
     const modelOverride = isHardTask ? {
       backend: 'openai',
       openaiModel: MODEL_HARD.model,
       openaiBaseUrl: MODEL_HARD.baseUrl,
       openaiApiKey: MODEL_HARD.apiKey,
-    } : undefined;
+    } : {
+      backend: 'openai',
+      openaiModel: MODEL_NORMAL.model,
+      openaiBaseUrl: MODEL_NORMAL.baseUrl,
+      openaiApiKey: MODEL_NORMAL.apiKey,
+    };
     if (isHardTask) {
       console.log(`[CX] 检测到 [困难] 标记，使用: ${MODEL_HARD.model} (${MODEL_HARD.baseUrl})`);
     }
@@ -328,6 +371,7 @@ async function connectWebSocket() {
       console.warn('[CX] 获取 WS Token 失败，使用空 token:', e.message);
     }
   }
+  // WebSocket 认证：ws 库 headers 选项不兼容，改用 URL 参数传递 token
   ws = new WebSocket(`ws://localhost:3210/ws?token=${wsToken}`);
 
   ws.on('open', async () => {
