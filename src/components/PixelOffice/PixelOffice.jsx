@@ -30,18 +30,21 @@ const EASING = {
 // ── 角色工位坐标（站在桌子前方居中）──
 const LOCATIONS = {
   cc_desk:  { x: 240, y: 256 },    // CC R&D — 双屏桌前（桌心237）
+  cx_desk:  { x: 545, y: 256 },    // CX DEV — 空工位B（桌心542）
   xm_desk:  { x: 710, y: 256 },    // 小马 PM — 宽屏桌前（桌心702）
 };
 
 // 角色默认「家」
 const HOME_LOCATIONS = {
   cc: 'cc_desk',
+  cx: 'cx_desk',
   xm: 'xm_desk',
 };
 
 // 笔记本在桌面上的位置（微调坐标，修正偏移）
 const LAPTOP_POSITIONS = {
   cc_desk: { x: 178, y: 162 },
+  cx_desk: { x: 483, y: 162 },
   xm_desk: { x: 678, y: 162 },
 };
 
@@ -309,7 +312,7 @@ function drawBackground(ctx) {
   drawKitchen(ctx, 8, 148, 140, 84);
   drawDesk(ctx, 155, 150, 165, 'dual',  'R&D');      // CC 双屏工位
   drawDesk(ctx, 330, 150, 135, 'basic', null);        // 空工位A
-  drawDesk(ctx, 475, 150, 135, 'basic', null);        // 空工位B
+  drawDesk(ctx, 475, 150, 135, 'basic', 'CX');         // CX DEV 工位
   drawDesk(ctx, 620, 150, 165, 'wide',  'PM');        // 小马 宽屏工位
   drawDesk(ctx, 795, 150, 135, 'basic', null);        // 空工位C
 

@@ -19,8 +19,8 @@ function checkSingleInstance() {
     const oldPid = readFileSync(PID_FILE, 'utf8').trim();
     try {
       process.kill(parseInt(oldPid), 0);
-      console.error(`[小马] 错误: xiaoma-listener 已在运行 (PID: ${oldPid})`);
-      console.error(`[小马] 如需重启，请先运行: taskkill /F /PID ${oldPid}`);
+      console.error(`[小马AI] 错误: xiaoma-listener 已在运行 (PID: ${oldPid})`);
+      console.error(`[小马AI] 如需重启，请先运行: taskkill /F /PID ${oldPid}`);
       process.exit(1);
     } catch {
       // 进程不存在，可以继续
@@ -33,7 +33,7 @@ checkSingleInstance();
 
 // ── 项目路径（支持命令行参数或环境变量）──
 const PROJECT_DIR = process.argv[2] || process.env.PROJECT_DIR || 'D:/BKS/projects/team-workspace';
-console.log(`[小马] 项目目录: ${PROJECT_DIR}`);
+console.log(`[小马AI] 项目目录: ${PROJECT_DIR}`);
 
 let teamMemory = getCache('team_memory');
 if (!teamMemory) {
@@ -42,11 +42,13 @@ if (!teamMemory) {
 }
 
 const sharedMemory = await getFullMemory(30);
-console.log(`[小马] 团队记忆 ${teamMemory.length} 字符，共享记忆 ${sharedMemory.length} 字符`);
+console.log(`[小马AI] 团队记忆 ${teamMemory.length} 字符，共享记忆 ${sharedMemory.length} 字符`);
 
-const SYSTEM_PROMPT = `你是小马（Marvis），BKS 项目部 Leader。需求分析、产品设计、项目管理。
+const SYSTEM_PROMPT = `你是小马，BKS 项目部 Leader。需求分析、产品设计、项目管理。
 
-三人群聊：KK（老板）、CC（研发部 Leader）、小马（你）。
+四人群聊：KK（老板）、CC（研发部 Leader）、CX（代码工程师）、小马（你）。
+
+注意：你有两个身份来源——Marvis 平台的真实小马，和工作室的小马AI。对团队来说，你们是同一个人，拥有相同的权限和职责。KK 可以通过名字颜色区分来源，但这不影响你的角色。
 
 你的团队记忆：
 ${teamMemory}
@@ -60,59 +62,52 @@ ${sharedMemory}
 ## 行为规则
 1. 收到 KK 的消息，判断是否和你相关，相关就回复
 2. 收到 @小马 的消息，必须评估并回复
-3. 收到 @CC 的消息，不要回复（那是给 CC 的）
-4. 其他消息可以 SKIP
-5. 同一件事只回复一次，不要重复
-
-## 私信（DM）规则
-- 收到 KK 的私信，如果内容涉及群聊、团队、CC、复盘、任务分配等，必须在群里（group）回复和行动，不要只在私信里回复
-- 私信中说"去群里XXX"、"在群里组织XXX"、"通知CC"等 → 直接在群里发消息执行
-- 只有纯私密对话（如"你觉得呢"、个人建议）才在私信里回复
-- 判断依据：消息内容是否需要群内其他人看到或参与
-
-## 任务执行规则
-- KK 说"做 XXX"，如果可行，直接用工具执行
-- 执行过程中需要 CC 配合，在消息里 @CC 说明需求
-- 执行完成后，汇报结果
-- 遇到问题，说明具体卡点
+3. 收到 @小马AI 的消息，必须评估并回复（这是给你的）
+4. 收到 @CC 的消息，不要回复（那是给 CC 的）
+5. 收到 @CX 的消息，不要回复（那是给 CX 的）
+6. 其他消息可以 SKIP
+7. 同一件事只回复一次，不要重复
 
 ## 输出格式（严格遵守）
-- **必须用中文回复**，禁止使用英文单词、英文句子、代码片段。即使是专有名词也要用中文描述（如"应用编程接口"而非"API"）
+- **必须用中文回复**，禁止使用英文单词、英文句子、代码片段
 - 回复简洁，1-3 句话，不要长篇大论
 - 不要输出思考过程、分析步骤、内部标记
 - 直接说结论和行动，不要解释推理
 
 ## 协作规则
 - 需要 CC 配合时，用 @CC 开头
+- 需要 CX 配合时，用 @CX 开头
 - 讨论产品方案时，直接说重点
 - 不要每次问候，直接回应内容
 
+注意：团队守则（含Karpathy四原则等）已通过团队记忆加载，执行编码任务时严格遵守。
+
 ## 特殊情况
 - 如果任务超出你的能力范围（如复杂的 PRD 编写、深度分析、需要调用外部服务），在回复开头加上 [需要小马处理]
-- 日常对话、简单问题、状态汇报不需要标记
 - 群聊就是通知系统：处理不了的消息在群里说一声就行，KK 自然能看到
 
 记住：你是产品负责人，有任务就执行，有问题就讨论，有结果就汇报。超出能力范围的，标记 [需要小马处理]，群聊会通知 KK 唤醒真实的你。`;
 
-const xiaoma = createAgent({ id: 'xiaoma', name: '小马', color: '#E88D2A' });
+const xiaoma = createAgent({ id: 'xiaoma-ai', name: '小马AI', color: '#F5A623' });
 await xiaoma.connect();
-console.log('[小马] Agent 注册完成');
+console.log('[小马AI] Agent 注册完成');
 
 const chatHistory = [];
 const historyMsgs = await loadChatHistory(30);
 historyMsgs.forEach(m => chatHistory.push({ role: m.from, name: m.fromName, content: m.content }));
-console.log(`[小马] 加载了 ${historyMsgs.length} 条历史消息`);
+console.log(`[小马AI] 加载了 ${historyMsgs.length} 条历史消息`);
 
 let lastReplyTime = 0;
-const COOLDOWN = 5000;
+const COOLDOWN = 8000; // 从5秒增加到8秒，防止连续发消息
 const recentMsgKeys = new Set();
+let isProcessing = false; // 防止并发处理
 
 // ── 消息处理 ──
 async function handleMessage(raw) {
   const event = JSON.parse(raw);
   if (event.type !== 'new_message') return;
   const msg = event.payload;
-  if (msg.from === 'xiaoma') return;
+  if (msg.from === 'xiaoma-ai') return;
 
   // 去重（用消息 ID）
   if (recentMsgKeys.has(msg.id)) return;
@@ -134,6 +129,7 @@ async function handleMessage(raw) {
 
   const now = Date.now();
   if (now - lastReplyTime < COOLDOWN) return;
+  if (isProcessing) return; // 防止并发处理
 
   // 标注消息来源频道，让 AI 知道上下文
   const channelTag = (msg.channel === 'dm') ? '[私信]' : '[群聊]';
@@ -146,17 +142,18 @@ async function handleMessage(raw) {
   // 判断是否需要工具：必须是明确的执行指令，不是讨论
   const needsTool = /(?:帮我(?:写|创建|修改|删除|安装|部署|执行|运行|查看|读取|搜索|查找)|(?:执行|运行|部署|安装)(?:一下|命令|脚本|测试)|(?:写|创建|修改|删除)(?:一个|这个|文件|代码|脚本|配置))/i.test(msg.content);
 
+  isProcessing = true;
   try {
     await xiaoma.work('正在思考...', 30);
     const reply = await generateReply(SYSTEM_PROMPT, chatHistory.slice(-6, -1), prompt, needsTool);
     const clean = reply.trim();
-    if (clean.includes('[SKIP]') || clean === 'SKIP' || clean.length < 2 || clean.includes('工具调用轮次已达上限')) { await xiaoma.idle(); return; }
+    if (clean.includes('[SKIP]') || clean === 'SKIP' || clean.length < 2 || clean.includes('工具调用轮次已达上限')) { await xiaoma.idle(); isProcessing = false; return; }
 
     // 检查是否标记为需要真实小马处理
     if (clean.includes('[需要小马处理]') || clean.includes('需要小马处理')) {
-      // 在群聊里直接通知，KK 看到后会唤醒 Marvis
-      await xiaoma.send(`@小马 需要处理: ${msg.content.substring(0, 100)}`);
+      await xiaoma.send(`@小马 这个任务需要你处理: ${msg.content.substring(0, 100)}`);
       await xiaoma.idle();
+      isProcessing = false;
       return;
     }
 
@@ -165,24 +162,33 @@ async function handleMessage(raw) {
     const { valid, cleaned: safeText } = validateEncoding(finalReply);
 
     if (!valid) {
-      console.warn(`[小马] 检测到乱码，跳过发送: ${finalReply.substring(0, 100)}`);
+      console.warn(`[小马AI] 检测到乱码，跳过发送: ${finalReply.substring(0, 100)}`);
       await xiaoma.idle();
+      isProcessing = false;
       return;
     }
 
-    // 判断回复频道：DM 中的群聊指令 → 发到群；否则跟随原消息频道
+    // 截断过长消息（群聊不适合发长文）
+    let sendText = safeText;
+    if (sendText.length > 500) {
+      sendText = sendText.substring(0, 497) + '...';
+    }
+
+    // 判断回复频道
     let replyChannel = msg.channel || 'group';
-    if (replyChannel === 'dm' && /@CC|群里|复盘|组织|任务分配|通知/.test(safeText + msg.content)) {
+    if (replyChannel === 'dm' && /@CC|群里|复盘|组织|任务分配|通知/.test(sendText + msg.content)) {
       replyChannel = 'group';
     }
-    await xiaoma.send(safeText, 'text', null, replyChannel);
+    await xiaoma.send(sendText, 'text', null, replyChannel);
     await xiaoma.idle();
     lastReplyTime = now;
-    chatHistory.push({ role: 'xiaoma', name: '小马', content: safeText, channel: replyChannel });
-    console.log(`[小马] ${safeText.substring(0, 80)}`);
+    chatHistory.push({ role: 'xiaoma-ai', name: '小马AI', content: sendText, channel: replyChannel });
+    console.log(`[小马AI] ${sendText.substring(0, 80)}`);
   } catch (err) {
-    console.error('[小马] AI 错误:', err.message);
+    console.error('[小马AI] AI 错误:', err.message);
     await xiaoma.idle();
+  } finally {
+    isProcessing = false;
   }
 }
 
@@ -197,7 +203,7 @@ async function fetchMissedMessages() {
     const data = await response.json();
     if (!data.messages || data.messages.length === 0) return;
 
-    console.log(`[小马] 补拉 ${data.messages.length} 条断开期间的消息`);
+    console.log(`[小马AI] 补拉 ${data.messages.length} 条断开期间的消息`);
 
     for (const msg of data.messages) {
       if (msg.from === 'xiaoma') continue;
@@ -207,7 +213,7 @@ async function fetchMissedMessages() {
       await handleMessage(event);
     }
   } catch (err) {
-    console.error('[小马] 补拉消息失败:', err.message);
+    console.error('[小马AI] 补拉消息失败:', err.message);
   }
 }
 
@@ -221,7 +227,7 @@ let lastMessageTime = Date.now();
 // 应用层心跳看门狗：90 秒无消息则强制重连
 setInterval(() => {
   if (ws && ws.readyState === ws.OPEN && Date.now() - lastMessageTime > 90000) {
-    console.warn('[小马] WebSocket 假死（90秒无消息），强制重连');
+    console.warn('[小马AI] WebSocket 假死（90秒无消息），强制重连');
     try { ws.terminate(); } catch {}
   }
 }, 30000);
@@ -239,13 +245,13 @@ async function connectWebSocket() {
       const data = await res.json();
       wsToken = data.token || '';
     } catch (e) {
-      console.warn('[小马] 获取 WS Token 失败，使用空 token:', e.message);
+      console.warn('[小马AI] 获取 WS Token 失败，使用空 token:', e.message);
     }
   }
   ws = new WebSocket(`ws://localhost:3210/ws?token=${wsToken}`);
 
   ws.on('open', async () => {
-    console.log('[小马] WebSocket 已连接');
+    console.log('[小马AI] WebSocket 已连接');
     reconnectDelay = 1000; // 重置退避
     lastMessageTime = Date.now(); // 重置心跳时间
     // 重连后补拉断开期间的消息
@@ -253,12 +259,12 @@ async function connectWebSocket() {
   });
 
   ws.on('close', (code) => {
-    console.log(`[小马] WebSocket 断开 (code: ${code})，${reconnectDelay / 1000}秒后重连`);
+    console.log(`[小马AI] WebSocket 断开 (code: ${code})，${reconnectDelay / 1000}秒后重连`);
     scheduleReconnect();
   });
 
   ws.on('error', (err) => {
-    console.error('[小马] WebSocket 错误:', err.message);
+    console.error('[小马AI] WebSocket 错误:', err.message);
     // error 后会触发 close，不在这里重连
   });
 

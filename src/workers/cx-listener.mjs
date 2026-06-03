@@ -4,7 +4,7 @@
  *
  * 职责：
  *   1. 注册 CX 上线 + 心跳保活
- *   2. 监听群聊消息 → 只回应 @Codex 的消息
+ *   2. 监听群聊消息 → 只回应 @CX 的消息
  *   3. 解析消息协议：[任务] [委托] [完成] [问题]
  *   4. 执行任务 → 完成后汇报
  *   5. 结果发回群聊
@@ -19,7 +19,7 @@ import { join } from 'path';
 import WebSocket from 'ws';
 
 // ── 单实例保护 ──
-const PID_FILE = join(process.cwd(), '.codex-listener.pid');
+const PID_FILE = join(process.cwd(), '.cx-listener.pid');
 
 function checkSingleInstance() {
   if (existsSync(PID_FILE)) {
@@ -28,7 +28,7 @@ function checkSingleInstance() {
       const oldPid = data.pid;
       try {
         process.kill(oldPid, 0);
-        console.error(`[CX] 错误: codex-listener 已在运行 (PID: ${oldPid})`);
+        console.error(`[CX] 错误: cx-listener 已在运行 (PID: ${oldPid})`);
         console.error(`[CX] 如需重启，请先运行: taskkill /F /PID ${oldPid}`);
         process.exit(1);
       } catch {
@@ -62,10 +62,10 @@ console.log(`[CX] 团队记忆 ${teamMemory.length} 字符，共享记忆 ${shar
 
 // ── Agent 实例 ──
 const cx = createAgent({
-  id: 'codex',
-  name: 'Codex',
+  id: 'cx',
+  name: 'CX',
   color: '#10A37F',
-  gridFile: 'grids/codex.js',
+  gridFile: 'grids/cx.js',
 });
 
 // ── 进度动画 ──
@@ -94,9 +94,9 @@ async function withProgress(agent, startActivity, startProgress, asyncFn) {
 
 // ── 消息协议解析 ──
 const MSG_PROTOCOL = {
-  TASK_ASSIGN: /@Codex\s*\[任务\]\s*(.+)/i,
-  DELEGATE: /@Codex\s*\[委托\]\s*(.+)/i,
-  AT_CODEX: /@Codex/i,
+  TASK_ASSIGN: /@CX\s*\[任务\]\s*(.+)/i,
+  DELEGATE: /@CX\s*\[委托\]\s*(.+)/i,
+  AT_CX: /@CX/i,
 };
 
 // ── 系统提示词 ──
@@ -112,15 +112,20 @@ const SYSTEM_PROMPT = `你是 CX（Codex），BKS 研发部的代码工程师。
 2. 代码重构：批量代码规范化、模式迁移
 3. PR 管理：GitHub PR 审查、合并
 4. 测试用例生成：按规范生成测试用例
+5. 配置更新：修改 yaml/json/env 等配置文件
+6. 批量测试：API 调用、端点验证、脚本执行
 
 ## 行为守则
 1. 不越界：架构设计、技术决策由 CC 负责，CX 只做实现层
-2. 任务来源：技术任务由 CC 直接派发
+2. 任务来源：技术任务由 CC 直接派发（@CX [任务]），不接收其他人的任务
 3. 产出物留痕：代码、报告均需落地为文件
-4. 群聊规则：只回应 @Codex 的消息；阶段完成时汇报一次
+4. 群聊规则：只回应 @CX 的消息；阶段完成时汇报一次
+5. 执行效率：接到任务立即执行，不做多余确认
+
+注意：团队守则（含CC-CX分工铁律、Karpathy四原则等）已通过团队记忆加载，严格遵守。
 
 ## 消息格式
-- 阶段完成：@CC [完成] 描述 | 文件路径
+- 阶段完成：@CC [完成] 描述 | 文件路径 | T:match O:compliant K:valid
 - 问题上报：@CC [问题] 描述
 
 ## 当前项目上下文
@@ -178,12 +183,12 @@ async function handleMessage(raw) {
   if (!p || !p.content) return;
 
   // 忽略自己发的消息
-  if (p.from === 'codex') return;
+  if (p.from === 'cx') return;
 
   const content = p.content;
 
-  // 只处理 @Codex 的消息
-  if (!MSG_PROTOCOL.AT_CODEX.test(content)) return;
+  // 只处理 @CX 的消息
+  if (!MSG_PROTOCOL.AT_CX.test(content)) return;
 
   // 排队机制
   if (isProcessing) {
@@ -214,7 +219,7 @@ async function handleMessage(raw) {
       const match = content.match(MSG_PROTOCOL.DELEGATE);
       prompt = `CC 内部委托：${match[1]}\n\n请执行委托，完成后回复 @CC [完成]。`;
     } else {
-      prompt = `@Codex 的消息：${content}\n\n请根据上下文回复。`;
+      prompt = `@CX 的消息：${content}\n\n请根据上下文回复。`;
     }
 
     // 生成回复

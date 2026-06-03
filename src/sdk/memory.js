@@ -20,18 +20,26 @@ export function loadTeamMemory(projectDir) {
   const PROJECT_DIR = projectDir || 'D:/BKS/projects/team-workspace';
   const parts = [];
 
-  // 1. 通信记录 — CC 和小马的全部往来
+  // 1. 团队守则（必须完整加载）
+  try {
+    const rules = readFileSync(join(TEAM_DIR, '团队守则.md'), 'utf8');
+    parts.push('=== 团队守则（所有成员必须遵守）===\n' + rules);
+  } catch (e) {
+    parts.push('团队守则加载失败: ' + e.message);
+  }
+
+  // 2. 通信记录 — CC 和小马的全部往来
   try {
     const toCC = readFileSync(join(TEAM_DIR, '通信', 'to_CC.md'), 'utf8');
     const toXiaoma = readFileSync(join(TEAM_DIR, '通信', 'to_小马.md'), 'utf8');
-    parts.push('=== 团队通信记录 ===\n');
+    parts.push('\n=== 团队通信记录 ===\n');
     parts.push('--- 小马发给CC的信 ---\n' + toCC.substring(0, 3000));
     parts.push('\n--- CC发给小马的信 ---\n' + toXiaoma.substring(0, 3000));
   } catch (e) {
     parts.push('通信记录加载失败: ' + e.message);
   }
 
-  // 2. 回顾日志
+  // 3. 回顾日志
   try {
     const retroDir = join(TEAM_DIR, '回顾日志');
     const files = readdirSync(retroDir).filter(f => f.endsWith('.md')).sort().slice(-2);
@@ -39,12 +47,6 @@ export function loadTeamMemory(projectDir) {
       const content = readFileSync(join(retroDir, f), 'utf8');
       parts.push(`\n=== 回顾日志 ${f} ===\n` + content.substring(0, 2000));
     });
-  } catch (e) {}
-
-  // 3. 团队协作框架
-  try {
-    const framework = readFileSync(join(TEAM_DIR, '团队协作决策框架.md'), 'utf8');
-    parts.push('\n=== 团队协作决策框架 ===\n' + framework.substring(0, 1500));
   } catch (e) {}
 
   // 4. 技术方案

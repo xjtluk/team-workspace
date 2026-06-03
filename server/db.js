@@ -95,6 +95,7 @@ export async function initDB() {
   const now = Date.now();
   const agents = [
     ['cc', 'CC', 'agent', '#4A90D9', 'grids/clawd.js', now],
+    ['cx', 'CX', 'agent', '#10A37F', 'grids/cx.js', now],
     ['xiaoma', '小马', 'agent', '#E6A23C', 'grids/marvis.js', now],
     ['kk', 'KK', 'human', '#FFD700', null, now],
   ];

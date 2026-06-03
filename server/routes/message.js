@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { randomUUID } from 'crypto';
 import { queryOne, query, run } from '../db.js';
 import { broadcast } from '../ws/handler.js';
 
@@ -23,11 +24,10 @@ router.post('/', (req, res) => {
   }
 
   const now = Date.now();
-  const rand = Math.random().toString(36).substring(2, 8);
-  const messageId = `msg_${now}_${from}_${rand}`;
+  const messageId = `msg_${now}_${from}_${randomUUID()}`;
 
   run(
-    `INSERT INTO messages (id, from_id, from_name, content, type, channel, reply_to, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT OR IGNORE INTO messages (id, from_id, from_name, content, type, channel, reply_to, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [messageId, from, agent.name, content, type, validChannel, replyTo, now]
   );
 
