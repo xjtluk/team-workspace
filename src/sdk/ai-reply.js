@@ -6,18 +6,23 @@ import { execSync } from 'child_process';
 import { readFileSync, writeFileSync, readdirSync, existsSync, statSync } from 'fs';
 import { join } from 'path';
 
-// 后端配置：anthropic 或 openai
-const BACKEND = process.env.AI_BACKEND || 'anthropic';
+// 懒加载配置 — 在函数调用时读取环境变量，而不是模块加载时
+function getConfig() {
+  const backend = process.env.AI_BACKEND || 'anthropic';
 
-// Anthropic 配置
-const ANTHROPIC_BASE_URL = process.env.ANTHROPIC_BASE_URL || 'https://api.xiaomimimo.com/anthropic';
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_AUTH_TOKEN || '';
-const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'mimo-v2.5-pro';
+  // Anthropic 配置
+  const anthropicBaseUrl = process.env.ANTHROPIC_BASE_URL || 'https://api.xiaomimimo.com/anthropic';
+  const anthropicApiKey = process.env.ANTHROPIC_AUTH_TOKEN || '';
+  const anthropicModel = process.env.ANTHROPIC_MODEL || 'mimo-v2.5-pro';
 
-// OpenAI 兼容配置（本地模型）
-const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL || 'http://localhost:8080/v1';
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY || 'local';
-const OPENAI_MODEL = process.env.OPENAI_MODEL || 'local-model';
+  // OpenAI 兼容配置（本地模型）
+  const openaiBaseUrl = process.env.OPENAI_BASE_URL || 'http://localhost:8080/v1';
+  const openaiApiKey = process.env.OPENAI_API_KEY || 'local';
+  const openaiModel = process.env.OPENAI_MODEL || 'local-model';
+
+  console.log('[AI] getConfig:', { backend, openaiModel, openaiBaseUrl });
+  return { backend, anthropicBaseUrl, anthropicApiKey, anthropicModel, openaiBaseUrl, openaiApiKey, openaiModel };
+}
 
 // ── 超时与重试工具 ──
 const FETCH_TIMEOUT = 30000; // 30 秒超时
@@ -147,8 +152,10 @@ const TOOLS = [
 
 // OpenAI 兼容 API 调用（本地模型）
 async function callOpenAI(systemPrompt, messages, useTools) {
+  const config = getConfig();
+  console.log('[AI] callOpenAI: using model', config.openaiModel);
   const body = {
-    model: OPENAI_MODEL,
+    model: config.openaiModel,
     max_tokens: useTools ? 4096 : 2048,
     messages: [
       { role: 'system', content: systemPrompt },
@@ -168,11 +175,11 @@ async function callOpenAI(systemPrompt, messages, useTools) {
     }));
   }
 
-  const response = await fetchWithTimeout(`${OPENAI_BASE_URL}/chat/completions`, {
+  const response = await fetchWithTimeout(`${config.openaiBaseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${OPENAI_API_KEY}`,
+      'Authorization': `Bearer ${config.openaiApiKey}`,
     },
     body: JSON.stringify(body),
   });
@@ -283,8 +290,9 @@ function fixTruncatedUtf8(text) {
 
 // Anthropic API 调用
 async function callAnthropic(systemPrompt, messages, useTools) {
+  const config = getConfig();
   const body = {
-    model: ANTHROPIC_MODEL,
+    model: config.anthropicModel,
     max_tokens: useTools ? 4096 : 2048,
     system: systemPrompt,
     messages,
@@ -294,11 +302,11 @@ async function callAnthropic(systemPrompt, messages, useTools) {
     body.tools = TOOLS;
   }
 
-  const response = await fetchWithTimeout(`${ANTHROPIC_BASE_URL}/v1/messages`, {
+  const response = await fetchWithTimeout(`${config.anthropicBaseUrl}/v1/messages`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': ANTHROPIC_API_KEY,
+      'x-api-key': config.anthropicApiKey,
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify(body),
@@ -437,6 +445,7 @@ function cleanToolCallTags(text) {
 }
 
 async function _generateReply(systemPrompt, history, userMessage, useTools) {
+  const config = getConfig();
   const messages = [];
 
   // 加入历史
@@ -451,7 +460,7 @@ async function _generateReply(systemPrompt, history, userMessage, useTools) {
   messages.push({ role: 'user', content: userMessage });
 
   // 选择后端
-  const callAPI = BACKEND === 'openai' ? callOpenAI : callAnthropic;
+  const callAPI = config.backend === 'openai' ? callOpenAI : callAnthropic;
 
   // 如果不使用工具，直接返回文本回复
   if (!useTools) {
@@ -471,7 +480,7 @@ async function _generateReply(systemPrompt, history, userMessage, useTools) {
     // 有工具调用 → 执行 → 返回结果继续对话
     if (result.type === 'tool_calls') {
       // 添加 assistant 消息（包含工具调用）
-      if (BACKEND === 'openai') {
+      if (config.backend === 'openai') {
         messages.push({
           role: 'assistant',
           content: result.text || null,
@@ -501,7 +510,7 @@ async function _generateReply(systemPrompt, history, userMessage, useTools) {
         const toolResult = executeTool(tc.name, tc.input);
         console.log(`[结果] ${toolResult.substring(0, 100)}`);
 
-        if (BACKEND === 'openai') {
+        if (config.backend === 'openai') {
           toolResults.push({
             role: 'tool',
             tool_call_id: tc.id,
@@ -517,7 +526,7 @@ async function _generateReply(systemPrompt, history, userMessage, useTools) {
       }
 
       // 添加工具结果到消息
-      if (BACKEND === 'openai') {
+      if (config.backend === 'openai') {
         messages.push(...toolResults);
       } else {
         messages.push({ role: 'user', content: toolResults });

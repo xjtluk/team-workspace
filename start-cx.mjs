@@ -14,6 +14,9 @@ process.env.OPENAI_API_KEY = process.env.SILICONFLOW_API_KEY || 'sk-kwmefeifzfks
 process.env.OPENAI_MODEL = 'deepseek-ai/DeepSeek-V4-Pro';
 
 console.log('[CX] 配置: SiliconFlow DeepSeek V4 Pro');
+console.log('[CX] AI_BACKEND:', process.env.AI_BACKEND);
+console.log('[CX] OPENAI_MODEL:', process.env.OPENAI_MODEL);
+console.log('[CX] OPENAI_BASE_URL:', process.env.OPENAI_BASE_URL);
 
 // 项目路径：命令行参数 > 环境变量 > 默认值
 if (process.argv[2]) {
