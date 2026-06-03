@@ -17,11 +17,25 @@
 // CX 降级链配置
 const CX_MODELS = [
   {
+    name: 'SiliconFlow DeepSeek V4 Pro',
+    backend: 'openai',
+    baseUrl: 'https://api.siliconflow.cn/v1',
+    apiKey: process.env.SILICONFLOW_API_KEY || 'sk-kwmefeifzfkssrwsyrvrselxbxmorhzwqhekbnhrvncxpccx',
+    model: 'deepseek-ai/DeepSeek-V4-Pro',
+  },
+  {
     name: 'SiliconFlow DeepSeek V4 Flash',
     backend: 'openai',
     baseUrl: 'https://api.siliconflow.cn/v1',
     apiKey: process.env.SILICONFLOW_API_KEY || 'sk-kwmefeifzfkssrwsyrvrselxbxmorhzwqhekbnhrvncxpccx',
     model: 'deepseek-ai/DeepSeek-V4-Flash',
+  },
+  {
+    name: '火山方舟 DeepSeek V4 Pro',
+    backend: 'openai',
+    baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+    apiKey: 'ark-afa1d5c7-2e79-4bb7-b249-ab6fcf199aef-a8d71',
+    model: 'ep-20260602221649-hcpvd',  // Endpoint ID
   },
   {
     name: '火山方舟 DeepSeek V4 Flash',
@@ -36,13 +50,6 @@ const CX_MODELS = [
     baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
     apiKey: 'ark-afa1d5c7-2e79-4bb7-b249-ab6fcf199aef-a8d71',
     model: 'ep-20260602205242-ztn6h',  // Endpoint ID
-  },
-  {
-    name: '火山方舟 Doubao-2.0-lite',
-    backend: 'openai',
-    baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
-    apiKey: 'ark-afa1d5c7-2e79-4bb7-b249-ab6fcf199aef-a8d71',
-    model: 'ep-20260602222337-4z7xh',  // Endpoint ID
   },
   {
     name: '智谱 GLM-4.5-air',
