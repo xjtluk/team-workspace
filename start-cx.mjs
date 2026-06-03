@@ -14,64 +14,20 @@
  *   PROJECT_DIR=D:/BKS/projects/other node start-cx.mjs
  */
 
-// CX 降级链配置
-const CX_MODELS = [
-  {
-    name: 'SiliconFlow DeepSeek V4 Pro',
-    backend: 'openai',
-    baseUrl: 'https://api.siliconflow.cn/v1',
-    apiKey: process.env.SILICONFLOW_API_KEY || 'sk-kwmefeifzfkssrwsyrvrselxbxmorhzwqhekbnhrvncxpccx',
-    model: 'deepseek-ai/DeepSeek-V4-Pro',
-  },
-  {
-    name: 'SiliconFlow DeepSeek V4 Flash',
-    backend: 'openai',
-    baseUrl: 'https://api.siliconflow.cn/v1',
-    apiKey: process.env.SILICONFLOW_API_KEY || 'sk-kwmefeifzfkssrwsyrvrselxbxmorhzwqhekbnhrvncxpccx',
-    model: 'deepseek-ai/DeepSeek-V4-Flash',
-  },
-  {
-    name: '火山方舟 DeepSeek V4 Pro',
-    backend: 'openai',
-    baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
-    apiKey: 'ark-afa1d5c7-2e79-4bb7-b249-ab6fcf199aef-a8d71',
-    model: 'ep-20260602221649-hcpvd',  // Endpoint ID
-  },
-  {
-    name: '火山方舟 DeepSeek V4 Flash',
-    backend: 'openai',
-    baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
-    apiKey: 'ark-afa1d5c7-2e79-4bb7-b249-ab6fcf199aef-a8d71',
-    model: 'ep-20260602221852-f6q4v',  // Endpoint ID
-  },
-  {
-    name: '火山方舟 Doubao-2.0-code',
-    backend: 'openai',
-    baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
-    apiKey: 'ark-afa1d5c7-2e79-4bb7-b249-ab6fcf199aef-a8d71',
-    model: 'ep-20260602205242-ztn6h',  // Endpoint ID
-  },
-  {
-    name: '智谱 GLM-4.5-air',
-    backend: 'openai',
-    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-    apiKey: process.env.ZHIPU_API_KEY || '',
-    model: 'glm-4.5-air',
-  },
-];
+// CX 走 claude-code-router 统一路由
+// 自动降级链：硅基V4-Flash → 火山V4-Flash → MiMo 2.5 Pro
+// 降级逻辑由 custom-router.js 处理（检测 429 自动切换 provider）
+const ROUTER_URL = 'http://127.0.0.1:3456/v1';
 
-// 选择第一个有 API Key 的模型
-const selectedModel = CX_MODELS.find(m => m.apiKey) || CX_MODELS[0];
+process.env.AI_BACKEND = 'openai';
+process.env.OPENAI_BASE_URL = ROUTER_URL;
+process.env.OPENAI_API_KEY = 'any-string-is-ok';  // 路由器不需要真实 key
+process.env.OPENAI_MODEL = 'deepseek-ai/DeepSeek-V4-Flash';  // 路由器根据此 model 名分流
 
-process.env.AI_BACKEND = selectedModel.backend;
-process.env.OPENAI_BASE_URL = selectedModel.baseUrl;
-process.env.OPENAI_API_KEY = selectedModel.apiKey;
-process.env.OPENAI_MODEL = selectedModel.model;
-
-console.log(`[CX] 配置: ${selectedModel.name}`);
-console.log('[CX] AI_BACKEND:', process.env.AI_BACKEND);
-console.log('[CX] OPENAI_MODEL:', process.env.OPENAI_MODEL);
+console.log('[CX] 走 claude-code-router 统一路由');
 console.log('[CX] OPENAI_BASE_URL:', process.env.OPENAI_BASE_URL);
+console.log('[CX] OPENAI_MODEL:', process.env.OPENAI_MODEL);
+console.log('[CX] 降级链: 硅基V4-Flash → 火山V4-Flash → MiMo 2.5 Pro');
 
 // 项目路径：命令行参数 > 环境变量 > 默认值
 if (process.argv[2]) {
