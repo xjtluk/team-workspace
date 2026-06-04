@@ -106,12 +106,11 @@ function createToolProgressCallback(agent) {
   let toolRound = 0;
   return async (toolName, toolInput, roundIndex) => {
     toolRound++;
-    const label = TOOL_LABELS[toolName] || toolName;
-    const detail = toolInput?.command || toolInput?.path || toolInput?.pattern || '';
-    const shortDetail = typeof detail === 'string' ? detail.substring(0, 40) : '';
     const progress = Math.min(30 + toolRound * 5, 90);
+    // 中文概况，不暴露工具细节
+    const activity = `正在执行... (第${toolRound}步)`;
     try {
-      await agent.work(`${label}: ${shortDetail}`, progress);
+      await agent.work(activity, progress);
     } catch {}
   };
 }
@@ -360,7 +359,7 @@ async function handleMessage(raw) {
       modelOverride = { ...tier };
       try {
         console.log(`[CX] 尝试 ${name} (${modelOverride.openaiModel})`);
-        await cx.work(`启动: ${name}...`, 20);
+        await cx.work('正在处理消息...', 20);
         aiReply = await generateReply(SYSTEM_PROMPT, chatHistory, prompt, true, modelOverride, toolRounds, onToolCall);
         console.log(`[CX] ${name} 成功`);
         break; // 成功，跳出降级链

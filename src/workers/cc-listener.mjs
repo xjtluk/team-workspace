@@ -495,15 +495,15 @@ async function handleMessage(raw) {
     case 'task_assign':
       // 收到任务，开始执行
       console.log(`[CC] 收到任务: ${protocol.task}`);
-      await cc.work(`执行任务: ${protocol.task}`, 10);
+      await cc.work('正在处理任务...', 10);
 
       // 构造 prompt 让 AI 执行任务
       const taskPrompt = `@CC [任务] ${protocol.task}\n\n请执行这个任务。完成后，用以下格式汇报：\n@小马 [完成] 任务描述 | 文件路径 | T:匹配 O:合规 K:有效\n\n如果遇到问题，用以下格式上报：\n@小马 [问题] 问题描述`;
 
       try {
-        const taskReply = await withProgress(cc, `分析任务: ${protocol.task}`, 30,
+        const taskReply = await withProgress(cc, '正在分析任务...', 30,
           () => generateReply(SYSTEM_PROMPT, chatHistory.slice(-6, -1), taskPrompt, true));
-        await cc.work(`整理结果: ${protocol.task}`, 70);
+        await cc.work('正在整理结果...', 70);
         reply = taskReply.trim();
 
         // 如果 AI 返回空字符串，生成一个简单的回复
@@ -547,14 +547,14 @@ async function handleMessage(raw) {
     case 'reject':
       // 被打回，需要修正
       console.log(`[CC] 被打回: ${protocol.description}，原因: ${protocol.reason}`);
-      await cc.work(`修正任务: ${protocol.description}`, 10);
+      await cc.work('正在修正任务...', 10);
 
       const rejectPrompt = `@CC [打回] ${protocol.description} | ${protocol.reason}\n\n任务被打回，请根据原因修正。完成后重新汇报。`;
 
       try {
-        const rejectReply = await withProgress(cc, `分析修正: ${protocol.description}`, 30,
+        const rejectReply = await withProgress(cc, '正在分析修正...', 30,
           () => generateReply(SYSTEM_PROMPT, chatHistory.slice(-6, -1), rejectPrompt, true));
-        await cc.work(`整理结果: ${protocol.description}`, 70);
+        await cc.work('正在整理结果...', 70);
         reply = rejectReply.trim();
 
         // 如果 AI 没有自动添加 TOK 自检，手动添加
