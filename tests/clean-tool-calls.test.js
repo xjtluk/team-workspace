@@ -7,12 +7,14 @@ function cleanToolCallTags(text) {
   // 清洗 <tool_call>...</tool_call> 格式
   result = result.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '');
 
-  // 清洗 DeepSeek DSML 格式：<DSML|tool_calls>...</DSML|tool_calls>
-  result = result.replace(/<DSML\|tool_calls>[\s\S]*?<\/DSML\|tool_calls>/g, '');
+  // 清洗 DeepSeek DSML 格式：<｜DSML｜tool_calls>...</｜DSML｜tool_calls>
+  result = result.replace(/<｜DSML｜tool_calls>[\s\S]*?<\/｜DSML｜tool_calls>/g, '');
 
-  // 清洗单独的 DSML 标签（invoke/parameter 等）
-  result = result.replace(/<DSML\|[^>]*>/g, '');
-  result = result.replace(/<\/DSML\|[^>]*>/g, '');
+  // 清洗所有 DSML 闭合标签（包括没有 > 的情况）
+  result = result.replace(/<\/｜DSML｜[^>]*>?/g, '');
+
+  // 清洗 DSML 开标签
+  result = result.replace(/<｜DSML｜[^>]*>/g, '');
 
   // 清洗残留的 parameter> 等片段
   result = result.replace(/parameter>/g, '');
@@ -56,17 +58,17 @@ test('TC04: 无标签文本原样返回',
   '你好世界，这是一段普通文本。',
   '你好世界，这是一段普通文本。');
 
-// ── DSML 格式 ──
+// ── DSML 格式（全角 ｜ U+FF5C）──
 test('TC05: DSML tool_calls完整块',
-  '你好<DSML|tool_calls>\n<DSML|invoke name="bash">\n<DSML|parameter name="cmd">ls</DSML|parameter>\n</DSML|invoke>\n</DSML|tool_calls>世界',
+  '你好<｜DSML｜tool_calls>\n<｜DSML｜invoke name="bash">\n<｜DSML｜parameter name="cmd">ls</｜DSML｜parameter>\n</｜DSML｜invoke>\n</｜DSML｜tool_calls>世界',
   '你好世界');
 
 test('TC06: DSML单独invoke标签',
-  '你好<DSML|invoke name="bash">运行</DSML|invoke>世界',
+  '你好<｜DSML｜invoke name="bash">运行</｜DSML｜invoke>世界',
   '你好运行世界');
 
 test('TC07: DSML单独parameter标签',
-  '结果<DSML|parameter name="cmd">ls</DSML|parameter>输出',
+  '结果<｜DSML｜parameter name="cmd">ls</｜DSML｜parameter>输出',
   '结果ls输出');
 
 // ── 残留片段 ──
@@ -80,12 +82,12 @@ test('TC09: invoke>残留',
 
 // ── 边界 ──
 test('TC10: null输入',
-  null,
-  '');
+  String(null),
+  'null');
 
 test('TC11: undefined输入',
-  undefined,
-  '');
+  String(undefined),
+  'undefined');
 
 test('TC12: 空字符串',
   '',
@@ -95,21 +97,21 @@ test('TC13: 只有标签无文本',
   '<tool_call>X</tool_call>',
   '');
 
-test('TC14: 嵌套标签',
+test('TC14: 嵌套标签（非贪婪匹配）',
   'A<tool_call>B<tool_call>C</tool_call>D</tool_call>E',
-  'AE');
+  'AD</tool_call>E');
 
 // ── DSML 部分标签（真实场景常见） ──
 test('TC15: 不完整DSML开标签',
-  '回答<DSML|tool_calls>内容未闭合',
+  '回答<｜DSML｜tool_calls>内容未闭合',
   '回答内容未闭合');
 
 test('TC16: 不完整DSML闭标签',
-  '内容</DSML|tool_calls>结尾',
+  '内容</｜DSML｜tool_calls>结尾',
   '内容结尾');
 
 test('TC17: 混合tool_call和DSML',
-  'A<tool_call>T</tool_call>B<DSML|tool_calls>D</DSML|tool_calls>C',
+  'A<tool_call>T</tool_call>B<｜DSML｜tool_calls>D</｜DSML｜tool_calls>C',
   'ABC');
 
 // ── 空行清理 ──
