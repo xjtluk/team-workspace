@@ -147,7 +147,7 @@ const MODEL_TIERS = {
     backend: 'openai',
     openaiModel: 'glm-4.7',
     openaiBaseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-    openaiApiKey: process.env.ZHIPU_API_KEY_CX,
+    openaiApiKey: process.env.ZHIPU_API_KEY_XIAOMA || process.env.ZHIPU_API_KEY_CX,
   },
 };
 

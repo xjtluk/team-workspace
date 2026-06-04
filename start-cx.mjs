@@ -40,7 +40,7 @@ const CX_MODELS = {
   fallback: {
     name: '智谱 GLM-4.7',
     baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-    apiKey: process.env.ZHIPU_API_KEY_CX,
+    apiKey: process.env.ZHIPU_API_KEY_XIAOMA || process.env.ZHIPU_API_KEY_CX,
     model: 'glm-4.7',
   },
 };
