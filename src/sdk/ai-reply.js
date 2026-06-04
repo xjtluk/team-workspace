@@ -499,13 +499,15 @@ export async function generateReply(systemPrompt, history, userMessage, useTools
   return Promise.race([taskPromise, timeoutPromise]);
 }
 
-// 娓呮礂宸ュ叿璋冪敤鏍囩锛堥槻姝㈡硠婕忓埌缇よ亰锛?
+// 清洗工具调用标签（防止泄漏到群聊）
 function cleanToolCallTags(text) {
   if (!text) return '';
   return text
     .replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
     .replace(/<think>[\s\S]*?<\/think>/g, '')
-    .replace(/[锛淽DSML[锛瀅tool_calls>[\s\S]*?<\/[锛淽DSML[锛瀅tool_calls>/g, '')
+    .replace(/<｜DSML｜tool_calls>[\s\S]*?<\/｜DSML｜tool_calls>/g, '')
+    .replace(/<\/｜DSML｜[^>]*>?/g, '')
+    .replace(/<｜DSML｜[^>]*>/g, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }

@@ -198,11 +198,13 @@ function cleanToolCallTags(text) {
 
   // 清洗 DeepSeek DSML 格式：<｜DSML｜tool_calls>...</｜DSML｜tool_calls>
   // 使用 [\s\S]*? 匹配所有内容（含换行），非贪婪
-  result = result.replace(/<｜DSML｜tool_calls>[\s\S]*?<｜\/DSML｜tool_calls>/g, '');
+  result = result.replace(/<｜DSML｜tool_calls>[\s\S]*?<\/｜DSML｜tool_calls>/g, '');
 
-  // 清洗单独的 DSML 标签（invoke/parameter 等）
+  // 清洗所有 DSML 闭合标签（包括没有 > 的情况）
+  result = result.replace(/<\/｜DSML｜[^>]*>?/g, '');
+
+  // 清洗 DSML 开标签
   result = result.replace(/<｜DSML｜[^>]*>/g, '');
-  result = result.replace(/<｜\/DSML｜[^>]*>/g, '');
 
   // 清洗残留的 parameter> 等片段
   result = result.replace(/parameter>/g, '');
