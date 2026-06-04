@@ -399,13 +399,16 @@ function parseXmlToolCalls(text) {
 }
 
 // 解析 DSML 格式工具调用（智谱/某些模型输出格式）
-// 格式: <｜DSML｜tool_calls><｜DSML｜invoke name="bash"><｜DSML｜parameter name="command" string="true">...</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>
+// 注意：模型输出双全角竖线 ｜｜，不是单个 ｜
+// 格式: <｜｜DSML｜｜tool_calls><｜｜DSML｜｜invoke name="bash"><｜｜DSML｜｜parameter name="command" string="true">...</｜｜DSML｜｜parameter></｜｜DSML｜｜invoke></｜｜DSML｜｜tool_calls>
 function parseDsmlToolCalls(text) {
   const calls = [];
   let callId = 0;
+  // 用 ｜+ 匹配一个或多个全角竖线，兼容单/双竖线
+  // 注意：模板字面量中需要 \\\\s 才能让 new RegExp() 得到 \s
+  const bar = '｜+';
 
-  // 匹配所有 <｜DSML｜invoke name="xxx"> ... </｜DSML｜invoke> 块
-  const invokePattern = /<｜DSML｜invoke\s+name="([^"]+)"[^>]*>([\s\S]*?)<\/｜DSML｜invoke>/g;
+  const invokePattern = new RegExp(`<${bar}DSML${bar}invoke\\\\s+name="([^"]+)"[^>]*>([\\\\s\\\\S]*?)<\\\\/${bar}DSML${bar}invoke>`, 'g');
   let match;
 
   while ((match = invokePattern.exec(text)) !== null) {
@@ -413,14 +416,12 @@ function parseDsmlToolCalls(text) {
     const innerBlock = match[2];
     const params = {};
 
-    // 匹配所有 <｜DSML｜parameter name="xxx" ...>value</｜DSML｜parameter>
-    const paramPattern = /<｜DSML｜parameter\s+name="([^"]+)"[^>]*>([\s\S]*?)<\/｜DSML｜parameter>/g;
+    const paramPattern = new RegExp(`<${bar}DSML${bar}parameter\\\\s+name="([^"]+)"[^>]*>([\\\\s\\\\S]*?)<\\\\/${bar}DSML${bar}parameter>`, 'g');
     let paramMatch;
 
     while ((paramMatch = paramPattern.exec(innerBlock)) !== null) {
       const key = paramMatch[1];
       const value = paramMatch[2].trim();
-      // string="true" 表示值是字符串，否则尝试 JSON 解析
       const isString = paramMatch[0].includes('string="true"');
       params[key] = isString ? value : tryParseJson(value);
     }
@@ -632,10 +633,11 @@ function cleanToolCallTags(text) {
   if (!text) return '';
   return text
     .replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
-    .replace(/<think>[\s\S]*?<\/think>/g, '')
-    .replace(/<｜DSML｜tool_calls>[\s\S]*?<\/｜DSML｜tool_calls>/g, '')
-    .replace(/<\/｜DSML｜[^>]*>?/g, '')
-    .replace(/<｜DSML｜[^>]*>/g, '')
+    .replace/<think>[\s\S]*?<\/think>/g, '')
+    // DSML 格式：兼容单竖线 ｜ 和双竖线 ｜｜
+    .replace(/<｜+DSML｜+tool_calls>[\s\S]*?<\/｜+DSML｜+tool_calls>/g, '')
+    .replace(/<\/｜+DSML｜+[^>]*>?/g, '')
+    .replace(/<｜+DSML｜+[^>]*>/g, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
