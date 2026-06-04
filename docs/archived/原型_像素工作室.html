@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>像素工作室 · Team Workspace 原型</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --cc-blue: #4A90D9;
+  --cc-blue-dark: #357ABD;
+  --xiaoma-orange: #E6A23C;
+  --xiaoma-orange-dark: #C88A2E;
+  --kk-gold: #F0C040;
+  --kk-gold-dark: #C8A020;
+  --bg-dark: #1a1a2e;
+  --bg-panel: #16213e;
+  --floor-light: #2a2a3e;
+  --floor-dark: #222236;
+  --wall: #3a2f28;
+  --wall-dark: #2c221e;
+  --text: #e0e0e0;
+  --text-dim: #888;
+  --bubble-bg: #1a1a2e;
+  --bubble-border: #555;
+  --chat-bg: #0f0f23;
+  --msg-self: #2d4a3e;
+  --msg-other: #2a2a3e;
+  --msg-kk: #3d3a2e;
+  --error-red: #F56C6C;
+  --success-green: #67C23A;
+}
+
+body {
+  background: #0a0a14;
+  font-family: 'Press Start 2P', monospace;
+  color: var(--text);
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px);
+  pointer-events: none;
+  z-index: 9999;
+}
+
+.main-container {
+  width: 1200px;
+  height: 720px;
+  display: flex;
+  gap: 4px;
+  border: 4px solid #444;
+  box-shadow: 4px 4px 0 #222, 8px 8px 0 rgba(0,0,0,0.5);
+}
+
+/* ===== 像素办公室面板 ===== */
+.office-panel {
+  flex: 0 0 65%;
+  background: var(--bg-dark);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  border-right: 4px solid #333;
+}
+
+.floor {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-image:
+    linear-gradient(45deg, var(--floor-dark) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--floor-dark) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--floor-dark) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--floor-dark) 75%);
+  background-size: 32px 32px;
+  background-position: 0 0, 0 16px, 16px -16px, -16px 0;
+  opacity: 0.4;
+}
+
+.wall-top {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 16px;
+  background: var(--wall);
+  box-shadow: 0 4px 0 var(--wall-dark);
+}
+.wall-left {
+  position: absolute;
+  top: 0; left: 0; bottom: 0;
+  width: 16px;
+  background: var(--wall);
+  box-shadow: 4px 0 0 var(--wall-dark);
+}
+.wall-bottom {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 16px;
+  background: var(--wall);
+  box-shadow: 0 -4px 0 var(--wall-dark);
+}
+.wall-right {
+  position: absolute;
+  top: 0; right: 0; bottom: 0;
+  width: 16px;
+  background: var(--wall);
+  box-shadow: -4px 0 0 var(--wall-dark);
+}
+
+.brick-wall {
+  position: absolute;
+  top: 16px; left: 16px; right: 16px; bottom: 56px;
+  background:
+    repeating-linear-gradient(0deg, #3a2f28 0px, #3a2f28 8px, #2c221e 8px, #2c221e 9px),
+    repeating-linear-gradient(90deg, transparent 0px, transparent 31px, rgba(0,0,0,0.05) 31px, rgba(0,0,0,0.05) 32px);
+  background-size: 64px 9px;
+  z-index: 0;
+}
+
+.scene {
+  position: absolute;
+  top: 16px; left: 16px; right: 16px; bottom: 56px;
+  z-index: 1;
+}
+
+.zone-label {
+  position: absolute;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  color: rgba(255,255,255,0.25);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  pointer-events: none;
+}
+
+.desk-zone {
+  position: absolute;
+  top: 20px; left: 40px;
+  width: 360px; height: 280px;
+  border: 2px dashed rgba(255,255,255,0.08);
+  border-radius: 4px;
+}
+.desk-zone .zone-label { top: -14px; left: 8px; }
+
+.pixel-desk {
+  position: absolute;
+  background: #5D4037;
+  box-shadow:
+    3px 0 0 #4E342E,
+    0 3px 0 #4E342E,
+    3px 3px 0 #3E2723,
+    6px 0 0 #5D4037,
+    0 6px 0 #5D4037,
+    6px 6px 0 #4E342E;
+}
+.desk-cc {
+  top: 180px; left: 20px;
+  width: 120px; height: 72px;
+}
+.desk-xiaoma {
+  top: 180px; left: 200px;
+  width: 120px; height: 72px;
+}
+
+.pixel-pc {
+  position: absolute;
+  width: 36px; height: 28px;
+  background: #333;
+  box-shadow: 2px 0 0 #222, 0 2px 0 #222, 2px 2px 0 #111;
+}
+.pixel-pc::after {
+  content: '';
+  position: absolute;
+  top: 3px; left: 3px; right: 3px; bottom: 10px;
+  background: #0a0;
+  box-shadow: 0 0 6px rgba(0,255,0,0.4);
+  animation: pc-flicker 3s infinite;
+}
+@keyframes pc-flicker {
+  0%, 95%, 97%, 100% { opacity: 1; }
+  96% { opacity: 0.3; }
+}
+
+.sofa-zone {
+  position: absolute;
+  bottom: 20px; right: 60px;
+  width: 200px; height: 150px;
+  border: 2px dashed rgba(255,255,255,0.08);
+  border-radius: 4px;
+}
+.sofa-zone .zone-label { top: -14px; right: 8px; }
+
+.pixel-sofa {
+  position: absolute;
+  bottom: 20px; left: 30px;
+}
+.sofa-seat {
+  width: 100px; height: 36px;
+  background: #6D4C41;
+  box-shadow: 3px 0 0 #5D4037, 0 3px 0 #5D4037, 3px 3px 0 #4E342E;
+}
+.sofa-back {
+  width: 100px; height: 24px;
+  background: #8D6E63;
+  margin-bottom: 4px;
+  box-shadow: 3px 0 0 #795548, 0 3px 0 #795548, 3px 3px 0 #6D4C41;
+}
+.sofa-arm-left {
+  position: absolute;
+  left: -16px; top: 6px;
+  width: 16px; height: 30px;
+  background: #795548;
+  box-shadow: 2px 0 0 #6D4C41, 0 2px 0 #6D4C41, 2px 2px 0 #5D4037;
+}
+.sofa-arm-right {
+  position: absolute;
+  right: -16px; top: 6px;
+  width: 16px; height: 30px;
+  background: #795548;
+  box-shadow: 2px 0 0 #6D4C41, 0 2px 0 #6D4C41, 2px 2px 0 #5D4037;
+}
+
+.bug-zone {
+  position: absolute;
+  top: 20px; right: 80px;
+  width: 160px; height: 120px;
+  border: 2px dashed rgba(255,255,255,0.08);
+  border-radius: 4px;
+}
+.bug-zone .zone-label { top: -14px; right: 8px; }
+
+.bug-icon {
+  position: absolute;
+  top: 30px; left: 55px;
+  width: 24px; height: 24px;
+  background: var(--error-red);
+  clip-path: polygon(
+    30% 0%, 70% 0%, 100% 30%, 100% 50%,
+    70% 80%, 100% 100%, 70% 90%, 50% 70%,
+    30% 90%, 0% 100%, 30% 80%, 0% 50%, 0% 30%
+  );
+  animation: bug-wiggle 2s infinite;
+}
+@keyframes bug-wiggle {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  25% { transform: translate(2px, -2px) rotate(3deg); }
+  75% { transform: translate(-2px, 1px) rotate(-3deg); }
+}
+
+/* ===== 像素角色（CSS 像素艺术） ===== */
+.pixel-character {
+  position: absolute;
+  cursor: pointer;
+  z-index: 10;
+  transition: left 0.8s cubic-bezier(0.25, 0.1, 0.25, 1),
+              top 0.8s cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+/* 像素单元 */
+.px { position: absolute; width: 6px; height: 6px; }
+
+/* ===== 小马 (Marvis 像素小马) ===== */
+.char-xiaoma .char-sprite { position: relative; width: 66px; height: 72px; }
+
+/* 小马身体颜色: #E6A23C (orange) */
+.char-xiaoma .px-body  { background: #E6A23C; }
+/* 小马鬃毛/尾巴: #C07820 */
+.char-xiaoma .px-mane  { background: #C07820; }
+/* 小马眼睛: #1a1a2e */
+.char-xiaoma .px-eye   { background: #1a1a2e; }
+/* 小马鼻子: #F0C040 */
+.char-xiaoma .px-nose  { background: #F0C040; }
+
+/* ===== CC (Clawd 像素螃蟹) ===== */
+.char-cc .char-sprite { position: relative; width: 72px; height: 60px; }
+
+/* Clawd 身体: #E8943A (orange-brown) */
+.char-cc .px-body  { background: #E8943A; }
+/* Clawd 深色: #C07028 */
+.char-cc .px-dark  { background: #C07028; }
+/* Clawd 眼睛: #1a1a2e */
+.char-cc .px-eye   { background: #1a1a2e; }
+/* Clawd 高光: #F0B060 */
+.char-cc .px-light { background: #F0B060; }
+
+/* 工作动画 */
+.pixel-character.working .char-sprite {
+  animation: work-bounce 0.6s infinite;
+}
+@keyframes work-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+/* 讨论动画 */
+.pixel-character.talking .char-sprite {
+  animation: talk-wiggle 0.8s infinite;
+}
+@keyframes talk-wiggle {
+  0%, 100% { transform: rotate(0deg) scale(1); }
+  25% { transform: rotate(2deg) scale(1.02); }
+  75% { transform: rotate(-2deg) scale(1.02); }
+}
+
+/* 错误动画 */
+.pixel-character.error .char-sprite {
+  animation: error-shake 0.3s infinite;
+  filter: saturate(2) brightness(1.3);
+}
+@keyframes error-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-2px); }
+  75% { transform: translateX(2px); }
+}
+
+/* 离线 */
+.pixel-character.offline .char-sprite {
+  filter: grayscale(100%) opacity(0.4);
+  animation: none;
+}
+
+/* 角色名称标签 */
+.char-name-tag {
+  position: absolute;
+  bottom: -14px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+  color: rgba(255,255,255,0.4);
+  text-align: center;
+}
+
+/* 状态气泡 */
+.status-bubble {
+  position: absolute;
+  top: -52px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  background: var(--bubble-bg);
+  border: 2px solid var(--bubble-border);
+  padding: 6px 10px;
+  font-size: 7px;
+  box-shadow: 3px 3px 0 rgba(0,0,0,0.5);
+  pointer-events: none;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  z-index: 20;
+}
+.status-bubble .bubble-icon {
+  display: inline-block;
+  margin-right: 4px;
+}
+
+.progress-bar {
+  margin-top: 4px;
+  height: 4px;
+  background: #333;
+  box-shadow: 1px 0 0 #222, 0 1px 0 #222;
+  position: relative;
+}
+.progress-fill {
+  height: 100%;
+  background: var(--success-green);
+  transition: width 0.5s ease-out;
+}
+
+.panel-header {
+  position: absolute;
+  top: 4px; left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  font-size: 8px;
+  color: rgba(255,255,255,0.3);
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  pointer-events: none;
+}
+
+.status-bar {
+  position: absolute;
+  bottom: 16px; left: 16px; right: 16px;
+  height: 32px;
+  background: rgba(0,0,0,0.6);
+  border: 2px solid #333;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 16px;
+  font-size: 7px;
+  z-index: 5;
+}
+.status-dot {
+  width: 8px; height: 8px;
+  background: var(--success-green);
+  box-shadow: 0 0 4px var(--success-green);
+}
+.status-dot.disconnected {
+  background: var(--error-red);
+  box-shadow: 0 0 4px var(--error-red);
+}
+.status-bar .divider {
+  width: 1px; height: 16px;
+  background: #444;
+}
+
+/* ===== 聊天面板 ===== */
+.chat-panel {
+  flex: 0 0 35%;
+  display: flex;
+  flex-direction: column;
+  background: var(--chat-bg);
+}
+
+.chat-header {
+  padding: 10px 12px;
+  background: rgba(0,0,0,0.4);
+  border-bottom: 2px solid #222;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.chat-title {
+  font-size: 8px;
+  color: #ccc;
+}
+.online-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 7px;
+  color: var(--success-green);
+}
+.online-dot {
+  width: 6px; height: 6px;
+  background: var(--success-green);
+  box-shadow: 0 0 4px var(--success-green);
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sys-msg {
+  text-align: center;
+  font-size: 6px;
+  color: #555;
+  padding: 4px 0;
+}
+
+.msg-item {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  animation: msg-in 0.3s ease-out;
+}
+@keyframes msg-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.msg-avatar {
+  width: 28px; height: 28px;
+  flex-shrink: 0;
+  box-shadow: 2px 0 0 rgba(0,0,0,0.3), 0 2px 0 rgba(0,0,0,0.3);
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-family: monospace;
+}
+.msg-avatar.cc {
+  background: var(--cc-blue);
+  overflow: hidden;
+}
+.msg-avatar.cc img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  image-rendering: pixelated;
+}
+.msg-avatar.xiaoma { background: var(--xiaoma-orange); }
+.msg-avatar.kk { background: var(--kk-gold); color: #1a1a2e; font-weight: bold; }
+
+.msg-content {
+  flex: 1;
+  min-width: 0;
+}
+.msg-author {
+  font-size: 6px;
+  color: var(--text-dim);
+  margin-bottom: 3px;
+}
+.msg-bubble {
+  background: var(--msg-other);
+  padding: 6px 10px;
+  font-size: 7px;
+  line-height: 1.6;
+  box-shadow: 2px 2px 0 rgba(0,0,0,0.3);
+  word-break: break-all;
+}
+
+/* KK 消息靠右 + 金色气泡 */
+.msg-item.self {
+  flex-direction: row-reverse;
+  text-align: right;
+}
+.msg-item.self .msg-bubble {
+  background: var(--msg-kk);
+  border-left: 2px solid var(--kk-gold);
+}
+
+.msg-time {
+  font-size: 5px;
+  color: #555;
+  margin-top: 3px;
+}
+.msg-bubble .md-code {
+  background: rgba(0,0,0,0.4);
+  padding: 4px 6px;
+  font-size: 6px;
+  display: block;
+  margin: 4px 0;
+  color: var(--success-green);
+}
+.msg-bubble .md-bold { font-weight: bold; color: #fff; }
+.msg-bubble .md-link { color: var(--cc-blue); text-decoration: underline; cursor: pointer; }
+
+.offline-hint {
+  padding: 8px 12px;
+  background: rgba(245, 108, 108, 0.1);
+  border: 1px solid rgba(245, 108, 108, 0.2);
+  font-size: 6px;
+  color: var(--error-red);
+  text-align: center;
+  margin: 4px 12px;
+}
+
+.chat-input-area {
+  padding: 8px 10px;
+  border-top: 2px solid #222;
+  display: flex;
+  gap: 6px;
+}
+.chat-input {
+  flex: 1;
+  background: rgba(255,255,255,0.05);
+  border: 2px solid #333;
+  color: var(--text);
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  padding: 8px 10px;
+  outline: none;
+}
+.chat-input:focus {
+  border-color: var(--kk-gold);
+  box-shadow: 2px 2px 0 rgba(240, 192, 64, 0.2);
+}
+.chat-send {
+  background: var(--kk-gold);
+  border: none;
+  color: #1a1a2e;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  padding: 6px 14px;
+  cursor: pointer;
+  box-shadow: 2px 2px 0 rgba(0,0,0,0.3);
+  transition: background 0.1s;
+  font-weight: bold;
+}
+.chat-send:hover {
+  background: var(--kk-gold-dark);
+}
+.chat-send:active {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0 rgba(0,0,0,0.3);
+}
+
+.chat-messages::-webkit-scrollbar {
+  width: 6px;
+}
+.chat-messages::-webkit-scrollbar-track {
+  background: rgba(0,0,0,0.2);
+}
+.chat-messages::-webkit-scrollbar-thumb {
+  background: #333;
+}
+</style>
+</head>
+<body>
+
+<div class="main-container">
+
+<!-- ===== 像素办公室面板 ===== -->
+<div class="office-panel" id="officePanel">
+  <div class="floor"></div>
+  <div class="brick-wall"></div>
+  <div class="wall-top"></div>
+  <div class="wall-left"></div>
+  <div class="wall-bottom"></div>
+  <div class="wall-right"></div>
+
+  <div class="scene" id="scene">
+    <div class="desk-zone" id="deskZone">
+      <span class="zone-label">🔧 工作区</span>
+      <div class="pixel-desk desk-cc">
+        <div class="pixel-pc" style="position:absolute;top:-28px;left:42px;"></div>
+      </div>
+      <div class="pixel-desk desk-xiaoma">
+        <div class="pixel-pc" style="position:absolute;top:-28px;left:42px;"></div>
+      </div>
+    </div>
+
+    <div class="sofa-zone" id="sofaZone">
+      <span class="zone-label">☕ 休息区</span>
+      <div class="pixel-sofa">
+        <div class="sofa-back"></div>
+        <div class="sofa-seat"></div>
+        <div class="sofa-arm-left"></div>
+        <div class="sofa-arm-right"></div>
+      </div>
+    </div>
+
+    <div class="bug-zone" id="bugZone">
+      <span class="zone-label">🐛 调试区</span>
+      <div class="bug-icon"></div>
+    </div>
+
+    <!-- CC 角色（Clawd 像素螃蟹） -->
+    <div class="pixel-character char-cc working" id="charCC"
+         style="left:40px; top:100px;"
+         onclick="cycleState('cc')">
+      <div class="status-bubble" id="bubbleCC">
+        <span class="bubble-icon">⚙️</span><span class="bubble-text">编写技术方案</span>
+        <div class="progress-bar"><div class="progress-fill" style="width:45%"></div></div>
+      </div>
+      <div class="char-sprite" id="spriteCC"></div>
+      <div class="char-name-tag">CC</div>
+    </div>
+
+    <!-- 小马 角色（Marvis 像素小马） -->
+    <div class="pixel-character char-xiaoma working" id="charXiaoma"
+         style="left:248px; top:100px;"
+         onclick="cycleState('xiaoma')">
+      <div class="status-bubble" id="bubbleXiaoma">
+        <span class="bubble-icon">📋</span><span class="bubble-text">审查技术方案</span>
+        <div class="progress-bar"><div class="progress-fill" style="width:60%"></div></div>
+      </div>
+      <div class="char-sprite" id="spriteXiaoma"></div>
+      <div class="char-name-tag">小马</div>
+    </div>
+
+    <div class="panel-header">🏢 像素工作室</div>
+  </div>
+
+  <div class="status-bar">
+    <div class="status-dot" id="wsDot"></div>
+    <span id="wsStatus">WS 已连接</span>
+    <div class="divider"></div>
+    <span>🟢 CC</span>
+    <span>🟢 小马</span>
+    <div class="divider"></div>
+    <span style="color:#888">localhost:3210</span>
+  </div>
+</div>
+
+<!-- ===== 聊天面板（三方群聊：KK / CC / 小马） ===== -->
+<div class="chat-panel">
+  <div class="chat-header">
+    <span class="chat-title">💬 团队群聊</span>
+    <span class="online-indicator">
+      <span class="online-dot"></span> 3人在线
+    </span>
+  </div>
+
+  <div class="chat-messages" id="chatMessages">
+    <div class="sys-msg">— 2026-05-31 像素工作室 · 团队群聊 —</div>
+
+    <!-- CC -->
+    <div class="msg-item">
+      <div class="msg-avatar cc"><img src="clawd.png" alt="CC"></div>
+      <div class="msg-content">
+        <div class="msg-author">CC</div>
+        <div class="msg-bubble">技术方案初稿已完成 ✅<br>涉及 Node.js + Preact + Canvas 2D + SQLite</div>
+        <div class="msg-time">14:30</div>
+      </div>
+    </div>
+
+    <!-- 小马 -->
+    <div class="msg-item">
+      <div class="msg-avatar xiaoma">🐴</div>
+      <div class="msg-content">
+        <div class="msg-author">小马</div>
+        <div class="msg-bubble">收到，我来审查。<br>架构图可以考虑用 baoyu-diagram 画一下</div>
+        <div class="msg-time">14:32</div>
+      </div>
+    </div>
+
+    <!-- CC -->
+    <div class="msg-item">
+      <div class="msg-avatar cc"><img src="clawd.png" alt="CC"></div>
+      <div class="msg-content">
+        <div class="msg-author">CC</div>
+        <div class="msg-bubble">好的。数据库表结构 4 张：<br><span class="md-code">agents / messages / status_log / offline_queue</span></div>
+        <div class="msg-time">14:35</div>
+      </div>
+    </div>
+
+    <!-- 小马 -->
+    <div class="msg-item">
+      <div class="msg-avatar xiaoma">🐴</div>
+      <div class="msg-content">
+        <div class="msg-author">小马</div>
+        <div class="msg-bubble">评审通过 ✅ 等你俩确认后 D1 开工。<br>CC 先准备 spritesheet 资源验证</div>
+        <div class="msg-time">14:40</div>
+      </div>
+    </div>
+
+    <!-- KK（老板） -->
+    <div class="msg-item self">
+      <div class="msg-avatar kk">👑</div>
+      <div class="msg-content">
+        <div class="msg-author">KK</div>
+        <div class="msg-bubble">方案看了，可以推进。<br>另外原型里 CC 的角色图记得用他那个像素 sprite</div>
+        <div class="msg-time">14:45</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="offline-hint" style="display:none" id="offlineHint">
+    ⚠️ CC 当前离线 · 消息已排队，上线后自动推送
+  </div>
+
+  <div class="chat-input-area">
+    <input class="chat-input" id="chatInput" placeholder="KK 发言..." onkeydown="if(event.key==='Enter')sendMessage()">
+    <button class="chat-send" onclick="sendMessage()">&gt;&gt;</button>
+  </div>
+</div>
+
+</div>
+
+<script>
+// ===== 状态管理 =====
+const STATES = ['working', 'talking', 'idle', 'error', 'offline'];
+
+const ccActivities = {
+  working: '编写技术方案',
+  talking: '讨论架构设计',
+  idle: '休息中 ☕',
+  error: 'Spritesheet 解码失败',
+  offline: '已离线'
+};
+const xiaomaActivities = {
+  working: '审查技术方案',
+  talking: '讨论需求细节',
+  idle: '休息中 ☕',
+  error: '数据源连接超时',
+  offline: '已离线'
+};
+
+// ===== 像素艺术渲染 =====
+// 每个角色用二维数组定义，'B'=body, 'M'=mane, 'D'=dark, 'E'=eye, 'N'=nose, 'L'=light
+const pixelArt = {
+  // Clawd 像素螃蟹 (12x10)
+  cc: [
+    '............',
+    '...BBBBB....',
+    '..BDDBBDDB..',
+    '.BBBBBBBBBB.',
+    'BBBBBBBBBBBB',
+    'B.BBBBBBB.B.',
+    '.B..DDDD..B.',
+    '..B......B..',
+    '...B....B...',
+    '....BBBB....',
+  ],
+  // 小马 Marvis 像素小马 (11x12)
+  xiaoma: [
+    '...........',
+    '...BBB.....',
+    '..MMMMM....',
+    '.BB.M.BB...',
+    'BBBBBBBBB..',
+    'BB.BBB.BB..',
+    'BBBBBBBBB..',
+    'BB.BBB.BB..',
+    '.BM...MB...',
+    '..BBBBB....',
+    '...B.B.....',
+    '...BBBB....',
+  ]
+};
+
+// 颜色映射
+const colorMap = {
+  cc:   { B:'px-body', E:'px-eye', D:'px-dark', L:'px-light' },
+  xiaoma: { B:'px-body', M:'px-mane', E:'px-eye', N:'px-nose' }
+};
+
+function renderSprite(agentId) {
+  const container = document.getElementById('sprite' + (agentId === 'cc' ? 'CC' : 'Xiaoma'));
+  const grid = pixelArt[agentId];
+  const colors = colorMap[agentId];
+  const size = 6;
+
+  container.innerHTML = '';
+  for (let y = 0; y < grid.length; y++) {
+    for (let x = 0; x < grid[y].length; x++) {
+      const ch = grid[y][x];
+      if (ch === '.') continue;
+      const cls = colors[ch] || 'px-body';
+      const div = document.createElement('div');
+      div.className = 'px ' + cls;
+      div.style.left = (x * size) + 'px';
+      div.style.top  = (y * size) + 'px';
+      container.appendChild(div);
+    }
+  }
+}
+
+const charData = {
+  cc:   { state: 'working', charEl: null, bubbleEl: null, activities: ccActivities,   defaultPos: { desk: [40,100], sofa: [570,430], bug: [520,90] } },
+  xiaoma: { state: 'working', charEl: null, bubbleEl: null, activities: xiaomaActivities, defaultPos: { desk: [248,100], sofa: [620,430], bug: [560,90] } }
+};
+
+function init() {
+  charData.cc.charEl = document.getElementById('charCC');
+  charData.cc.bubbleEl = document.getElementById('bubbleCC');
+  charData.xiaoma.charEl = document.getElementById('charXiaoma');
+  charData.xiaoma.bubbleEl = document.getElementById('bubbleXiaoma');
+  renderSprite('cc');
+  renderSprite('xiaoma');
+}
+
+function cycleState(agentId) {
+  const data = charData[agentId];
+  const el = data.charEl;
+  const bubble = data.bubbleEl;
+
+  let idx = STATES.indexOf(data.state);
+  idx = (idx + 1) % STATES.length;
+  data.state = STATES[idx];
+
+  STATES.forEach(s => el.classList.remove(s));
+  el.classList.add(data.state);
+
+  const activity = data.activities[data.state];
+
+  const zones = { working:'desk', talking:'desk', idle:'sofa', error:'bug', offline:'sofa' };
+  const zone = zones[data.state];
+  const pos = data.defaultPos[zone];
+  el.style.left = pos[0] + 'px';
+  el.style.top  = pos[1] + 'px';
+
+  const iconEl = bubble.querySelector('.bubble-icon');
+  const textEl = bubble.querySelector('.bubble-text');
+  const fillEl = bubble.querySelector('.progress-fill');
+
+  const icons = { working:'⚙️', talking:'💬', idle:'💤', error:'🐛', offline:'⚫' };
+  iconEl.textContent = icons[data.state];
+  textEl.textContent = activity;
+
+  if (data.state === 'working') {
+    fillEl.style.width = (agentId === 'cc' ? '45' : '60') + '%';
+    fillEl.style.display = 'block';
+  } else {
+    fillEl.style.display = 'none';
+  }
+
+  updateOfflineHint();
+}
+
+function updateOfflineHint() {
+  const hint = document.getElementById('offlineHint');
+  const ccOff = charData.cc.state === 'offline';
+  const xmOff = charData.xiaoma.state === 'offline';
+  if (ccOff || xmOff) {
+    hint.style.display = 'block';
+    hint.textContent = '⚠️ ' + (ccOff ? 'CC' : '小马') + ' 当前离线 · 消息已排队';
+  } else {
+    hint.style.display = 'none';
+  }
+}
+
+// ===== 聊天（KK 身份发言） =====
+function addMessage(from, author, content) {
+  const now = new Date();
+  const time = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+  const container = document.getElementById('chatMessages');
+
+  const item = document.createElement('div');
+  item.className = 'msg-item' + (from === 'kk' ? ' self' : '');
+
+  const avatars = {
+    cc: '<img src="clawd.png" alt="CC">',
+    xiaoma: '🐴',
+    kk: '👑'
+  };
+  const avatarClass = from;
+
+  item.innerHTML = `
+    <div class="msg-avatar ${avatarClass}">${avatars[from]}</div>
+    <div class="msg-content">
+      <div class="msg-author">${author}</div>
+      <div class="msg-bubble">${content}</div>
+      <div class="msg-time">${time}</div>
+    </div>
+  `;
+
+  container.appendChild(item);
+  container.scrollTop = container.scrollHeight;
+}
+
+function sendMessage() {
+  const input = document.getElementById('chatInput');
+  const text = input.value.trim();
+  if (!text) return;
+
+  addMessage('kk', 'KK', text);
+  input.value = '';
+
+  // 模拟 CC / 小马 回复
+  setTimeout(() => {
+    const repliers = [
+      { from: 'cc', author: 'CC', replies: ['收到 👍', '好的我来处理', '明白，先验证一下', 'OK 开工'] },
+      { from: 'xiaoma', author: '小马', replies: ['收到 👌', '好的老板', '我来跟进', '了解'] }
+    ];
+    const r = repliers[Math.floor(Math.random() * repliers.length)];
+    const reply = r.replies[Math.floor(Math.random() * r.replies.length)];
+    addMessage(r.from, r.author, reply);
+  }, 1000 + Math.random() * 2000);
+}
+
+init();
+</script>
+
+</body>
+</html>

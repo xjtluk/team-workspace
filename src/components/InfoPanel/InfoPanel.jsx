@@ -74,8 +74,9 @@ const STATUS_LABELS = {
   error: '异常', offline: '离线', thinking: '思考中',
 };
 
+// 状态颜色：空闲=绿，工作中=黄，异常=红，离线=灰
 const STATUS_COLORS = {
-  idle: '#67C23A', working: '#4A90D9', talking: '#E6A23C',
+  idle: '#67C23A', working: '#E6A23C', talking: '#4A90D9',
   error: '#F56C6C', offline: '#909399', thinking: '#A78BFA',
 };
 

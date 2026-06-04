@@ -1903,7 +1903,7 @@ const BUBBLE_COLORS = {
   working: { bg: '#1a2a3a', border: '#4A90D9', glow: 'rgba(74,144,217,0.3)' },
   talking: { bg: '#1a3a1a', border: '#67C23A', glow: 'rgba(103,194,58,0.3)' },
   error:   { bg: '#3a1a1a', border: '#F56C6C', glow: 'rgba(245,108,108,0.4)' },
-  idle:    { bg: '#2a2a2a', border: '#909399', glow: 'rgba(144,147,153,0.15)' },
+  idle:    { bg: '#1a2a1a', border: '#44ff44', glow: 'rgba(68,255,68,0.15)' },
 };
 
 function drawBubble(ctx, agent, x, y) {

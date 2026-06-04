@@ -1,0 +1,2555 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BKS 像素工作室 · Team Workspace</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+/* ===== RESET & BASE ===== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+/* ===== DESIGN TOKENS ===== */
+:root {
+  /* Brand Pixel Colors (16-bit, no gradient) */
+  --floor-light:    #4e6048;
+  --floor-dark:     #3e5038;
+  --floor-path:     #627259;
+  --wall-wood:      #7c644a;
+  --desk-side:      #9c7a4b;
+  --desk-top:       #dbb46a;
+  --desk-shadow:    #7a5c2e;
+  --monitor-frame:  #2a2a2a;
+  --screen-code:    #aaffaa;
+  --screen-dim:     #55aa55;
+  --board-bg:       #1e2a2e;
+  --board-border:   #44aaff;
+  --boss-wall:      #5a3e2e;
+
+  /* UI Layer Colors */
+  --bg-void:        #080c10;
+  --bg-panel:       #0c1118;
+  --bg-chat:        #090d13;
+  --bg-surface:     #111827;
+  --bg-elevated:    #1a2332;
+
+  /* Character Theme Colors */
+  --cx-orange:      #ffaa66;
+  --cc-blue:        #99ccff;
+  --xiaoma-green:   #88dd88;
+  --hermes-purple:  #cc99ff;
+  --kk-gold:        #f0c040;
+  --kk-gold-dim:    #c8922a;
+  --vacant-gray:    #aaaaaa;
+
+  /* Status Colors */
+  --status-online:  #22c55e;
+  --status-working: #60a5fa;
+  --status-idle:    #f59e0b;
+  --status-error:   #f87171;
+  --status-offline: #6b7280;
+
+  /* Text Colors */
+  --text-primary:   #e8edf2;
+  --text-secondary: #8fa3b8;
+  --text-dim:       #445566;
+  --text-accent:    #44aaff;
+
+  /* Border */
+  --border-hard:    #2a3a4a;
+  --border-bright:  #44aaff;
+  --border-gold:    #f0c040;
+
+  /* Pixel shadow (no CSS shadow - pixel art style) */
+  --pixel-shadow: 4px 4px 0 rgba(0,0,0,0.6);
+
+  /* Scanline overlay */
+  --scanline: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    rgba(0,0,0,0.04) 3px,
+    rgba(0,0,0,0.04) 4px
+  );
+}
+
+/* ===== GLOBAL ===== */
+html, body {
+  width: 100%; height: 100%;
+  background: var(--bg-void);
+  font-family: 'Press Start 2P', monospace;
+  color: var(--text-primary);
+  overflow: hidden;
+  image-rendering: pixelated;
+}
+
+/* Scanline effect overlay */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: var(--scanline);
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.6;
+}
+
+/* ===== MAIN LAYOUT ===== */
+.workspace {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Top title bar */
+.title-bar {
+  flex-shrink: 0;
+  height: 28px;
+  background: #050810;
+  border-bottom: 2px solid #1a2a3a;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 8px;
+  position: relative;
+}
+.title-bar-dots {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+.dot {
+  width: 8px; height: 8px;
+  border: 2px solid transparent;
+  cursor: pointer;
+}
+.dot-red    { background: #f87171; border-color: #b45151; }
+.dot-yellow { background: #fbbf24; border-color: #b48a1a; }
+.dot-green  { background: #4ade80; border-color: #2d7a40; }
+.title-bar-text {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 7px;
+  color: var(--text-dim);
+  letter-spacing: 3px;
+  text-transform: uppercase;
+}
+.title-bar-time {
+  margin-left: auto;
+  font-size: 7px;
+  color: var(--text-dim);
+  font-family: monospace;
+}
+
+/* Main split area */
+.main-split {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+/* ===== OFFICE PANEL (LEFT 65%) ===== */
+.office-panel {
+  flex: 0 0 65%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  border-right: 2px solid var(--border-hard);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Panel header strip */
+.office-header {
+  flex-shrink: 0;
+  height: 32px;
+  background: rgba(0,0,0,0.5);
+  border-bottom: 2px solid var(--border-hard);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 8px;
+}
+.office-title {
+  font-size: 8px;
+  color: var(--text-accent);
+  letter-spacing: 2px;
+}
+.office-tag {
+  font-size: 6px;
+  color: var(--text-dim);
+  border: 1px solid var(--border-hard);
+  padding: 2px 6px;
+}
+
+/* Canvas area */
+.office-canvas {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+
+/* === 像素场景内部 === */
+/* 地板 - 棋盘格瓷砖 */
+.floor-tiles {
+  position: absolute;
+  inset: 0;
+  background-color: var(--floor-dark);
+  background-image:
+    linear-gradient(45deg, var(--floor-light) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--floor-light) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--floor-light) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--floor-light) 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+  opacity: 0.55;
+  image-rendering: pixelated;
+}
+
+/* 墙 - 木纹砖 */
+.wall-back {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 38%;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      var(--wall-wood) 0, var(--wall-wood) 9px,
+      #6a5438 9px, #6a5438 10px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent 0, transparent 39px,
+      rgba(0,0,0,0.06) 39px, rgba(0,0,0,0.06) 40px
+    );
+  background-size: 40px 10px;
+}
+
+/* 踢脚线 */
+.baseboard {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 6px;
+  background: #2a1e14;
+  border-top: 2px solid #1a120c;
+}
+
+/* 场景容器 */
+.scene {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+}
+
+/* ===== 区域标签 ===== */
+.zone-badge {
+  position: absolute;
+  font-size: 6px;
+  color: rgba(255,255,255,0.18);
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  pointer-events: none;
+  border-top: 1px dashed rgba(255,255,255,0.08);
+  padding-top: 3px;
+}
+
+/* ===== 像素家具 ===== */
+
+/* -- 办公桌 -- */
+.p-desk {
+  position: absolute;
+  z-index: 3;
+}
+.p-desk-top {
+  width: 96px; height: 40px;
+  background: var(--desk-top);
+  border: 2px solid var(--desk-side);
+  box-shadow: 3px 3px 0 var(--desk-shadow), 6px 6px 0 rgba(0,0,0,0.4);
+}
+.p-desk-front {
+  width: 96px; height: 12px;
+  background: var(--desk-side);
+  margin-top: -2px;
+  box-shadow: 3px 3px 0 rgba(0,0,0,0.4);
+}
+.p-desk-leg {
+  position: absolute;
+  bottom: -10px;
+  width: 6px; height: 10px;
+  background: #7a5c2e;
+}
+.p-desk-leg.l { left: 8px; }
+.p-desk-leg.r { right: 8px; }
+
+/* -- 显示器 -- */
+.p-monitor {
+  position: absolute;
+  z-index: 4;
+}
+.p-monitor-stand {
+  width: 6px; height: 8px;
+  background: #3a3a3a;
+  margin: 0 auto;
+}
+.p-monitor-base {
+  width: 22px; height: 4px;
+  background: #333;
+  margin: 0 auto;
+  box-shadow: 1px 1px 0 #222;
+}
+.p-monitor-frame {
+  width: 52px; height: 34px;
+  background: var(--monitor-frame);
+  border: 3px solid #1a1a1a;
+  box-shadow: 2px 2px 0 #111, -1px 0 0 #444 inset, 0 -1px 0 #444 inset;
+  position: absolute;
+  top: -42px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.p-monitor-screen {
+  position: absolute;
+  inset: 4px;
+  background: #001100;
+  overflow: hidden;
+}
+.screen-code-line {
+  position: absolute;
+  width: 100%;
+  font-family: monospace;
+  font-size: 4px;
+  color: var(--screen-code);
+  line-height: 5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
+  animation: scroll-code 4s linear infinite;
+}
+.screen-code-line:nth-child(2) { animation-delay: -1.5s; opacity: 0.7; }
+.screen-code-line:nth-child(3) { animation-delay: -3s; opacity: 0.5; }
+.screen-code-line:nth-child(4) { animation-delay: -0.8s; opacity: 0.4; }
+.screen-code-line:nth-child(5) { animation-delay: -2s; opacity: 0.6; }
+
+@keyframes scroll-code {
+  0%   { transform: translateY(-26px); }
+  100% { transform: translateY(6px); }
+}
+
+/* 屏幕扫描闪烁 */
+.p-monitor-frame::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(0,255,0,0.04) 50%,
+    transparent 100%
+  );
+  animation: scan-flicker 2s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes scan-flicker {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+
+/* -- 椅子 -- */
+.p-chair {
+  position: absolute;
+  z-index: 2;
+}
+.p-chair-back {
+  width: 28px; height: 22px;
+  background: #3a3a5a;
+  border: 2px solid #2a2a4a;
+  box-shadow: 2px 2px 0 rgba(0,0,0,0.5);
+  margin: 0 auto;
+}
+.p-chair-seat {
+  width: 34px; height: 12px;
+  background: #4a4a6a;
+  border: 2px solid #3a3a5a;
+  box-shadow: 2px 2px 0 rgba(0,0,0,0.5);
+  margin-top: 2px;
+  margin-left: -3px;
+}
+.p-chair-leg {
+  position: absolute;
+  width: 4px; height: 14px;
+  background: #555;
+}
+.p-chair-leg.fl { bottom: -14px; left: 3px; }
+.p-chair-leg.fr { bottom: -14px; right: 3px; }
+.p-chair-leg.bl { bottom: -10px; left: 3px; opacity: 0.5; }
+.p-chair-leg.br { bottom: -10px; right: 3px; opacity: 0.5; }
+
+/* -- 小盆栽 -- */
+.p-plant {
+  position: absolute;
+  z-index: 5;
+}
+.p-plant-pot {
+  width: 10px; height: 8px;
+  background: #8B4513;
+  border: 1px solid #5a2d0c;
+  margin: 0 auto;
+  clip-path: polygon(10% 0%, 90% 0%, 100% 100%, 0% 100%);
+}
+.p-plant-soil {
+  width: 10px; height: 3px;
+  background: #3d1f0a;
+  margin: 0 auto;
+}
+.p-plant-leaf {
+  width: 6px; height: 10px;
+  background: #2a7a2a;
+  border-radius: 50% 50% 0 50%;
+  position: absolute;
+}
+.p-plant-leaf.l { top: -8px; left: 0; transform: rotate(-30deg); }
+.p-plant-leaf.m { top: -12px; left: 2px; transform: rotate(0deg); background: #3a9a3a; }
+.p-plant-leaf.r { top: -8px; right: 0; transform: rotate(30deg); }
+
+/* -- 台灯 -- */
+.p-lamp {
+  position: absolute;
+  z-index: 5;
+}
+.p-lamp-base  { width: 12px; height: 4px; background: #555; margin: 0 auto; }
+.p-lamp-pole  { width: 3px; height: 14px; background: #666; margin: 0 auto; }
+.p-lamp-head  {
+  width: 18px; height: 8px;
+  background: #888;
+  clip-path: polygon(0% 100%, 100% 100%, 80% 0%, 20% 0%);
+  margin: 0 auto;
+}
+.p-lamp.on .p-lamp-head { background: #ffdd88; }
+.p-lamp.on .p-lamp-head::after {
+  content: '';
+  position: absolute;
+  top: 8px; left: 0;
+  width: 18px; height: 10px;
+  background: rgba(255,220,100,0.12);
+  clip-path: polygon(0% 0%, 100% 0%, 120% 100%, -20% 100%);
+}
+
+/* -- 饮水机 -- */
+.p-cooler {
+  position: absolute;
+  z-index: 3;
+}
+.p-cooler-body {
+  width: 20px; height: 36px;
+  background: #c0c8d0;
+  border: 2px solid #8898a8;
+  box-shadow: 2px 2px 0 rgba(0,0,0,0.4);
+}
+.p-cooler-bottle {
+  width: 14px; height: 24px;
+  background: #88ccff;
+  border: 2px solid #5599cc;
+  margin: -20px auto 0;
+  opacity: 0.7;
+}
+.p-cooler-spout {
+  width: 14px; height: 4px;
+  background: #9999bb;
+  margin: 0 auto;
+  border-bottom: 2px solid #667788;
+}
+.p-cooler-buttons {
+  display: flex;
+  gap: 3px;
+  justify-content: center;
+  margin-top: 4px;
+}
+.p-cooler-btn {
+  width: 6px; height: 4px;
+  background: #ff6666;
+  border: 1px solid #cc3333;
+}
+.p-cooler-btn.cold { background: #6699ff; border-color: #3366cc; }
+
+/* 气泡动画 */
+.bubble {
+  position: absolute;
+  width: 3px; height: 3px;
+  background: rgba(255,255,255,0.6);
+  border-radius: 50%;
+  animation: bubble-rise 2s ease-in infinite;
+}
+.bubble:nth-child(2) { animation-delay: 0.7s; left: 5px; }
+.bubble:nth-child(3) { animation-delay: 1.4s; left: 3px; }
+@keyframes bubble-rise {
+  0%   { transform: translateY(0); opacity: 0.8; }
+  100% { transform: translateY(-14px); opacity: 0; }
+}
+
+/* -- 服务器机柜 -- */
+.p-server {
+  position: absolute;
+  z-index: 3;
+}
+.p-server-body {
+  width: 28px; height: 48px;
+  background: #1a1a2e;
+  border: 2px solid #333355;
+  box-shadow: 2px 2px 0 rgba(0,0,0,0.5);
+  overflow: hidden;
+}
+.server-unit {
+  height: 8px;
+  background: #222244;
+  border-bottom: 1px solid #111133;
+  display: flex;
+  align-items: center;
+  padding: 0 3px;
+  gap: 2px;
+}
+.server-led {
+  width: 3px; height: 3px;
+  border-radius: 1px;
+}
+.server-led.g { background: #00ff88; animation: led-blink 1.5s ease-in-out infinite; }
+.server-led.r { background: #ff4444; animation: led-blink 1.5s ease-in-out infinite reverse; }
+.server-led.b { background: #4488ff; animation: led-blink 2s ease-in-out infinite; }
+@keyframes led-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+.server-fan {
+  width: 10px; height: 10px;
+  border: 2px solid #333;
+  border-radius: 50%;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fan-spin 1.5s linear infinite;
+}
+.server-fan::after {
+  content: '+';
+  color: #555;
+  font-size: 8px;
+  line-height: 1;
+}
+@keyframes fan-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* -- 状态看板 -- */
+.p-board {
+  position: absolute;
+  z-index: 6;
+}
+.p-board-frame {
+  padding: 4px;
+  background: var(--board-bg);
+  border: 2px solid var(--board-border);
+  box-shadow: 0 0 0 1px rgba(68,170,255,0.2), var(--pixel-shadow);
+  animation: board-glow 2s ease-in-out infinite alternate;
+}
+@keyframes board-glow {
+  from { box-shadow: 0 0 0 1px rgba(68,170,255,0.2), var(--pixel-shadow); }
+  to   { box-shadow: 0 0 0 3px rgba(68,170,255,0.4), var(--pixel-shadow); }
+}
+.board-title {
+  font-size: 5px;
+  color: var(--board-border);
+  letter-spacing: 2px;
+  margin-bottom: 3px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.board-title::before {
+  content: '';
+  display: inline-block;
+  width: 4px; height: 4px;
+  background: var(--board-border);
+  animation: led-blink 0.8s ease-in-out infinite;
+}
+.board-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 2px;
+}
+.board-label {
+  font-size: 5px;
+  color: var(--text-dim);
+  width: 18px;
+  flex-shrink: 0;
+}
+.board-bar-track {
+  height: 4px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  flex: 1;
+}
+.board-bar-fill {
+  height: 100%;
+  background: var(--board-border);
+  transition: width 2s ease-out;
+}
+.board-bar-fill.warn { background: #ffaa44; }
+.board-bar-fill.ok   { background: #44ff88; }
+.board-val {
+  font-size: 5px;
+  color: var(--text-secondary);
+  width: 20px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* -- 老板室 -- */
+.p-boss-room {
+  position: absolute;
+  z-index: 3;
+}
+.boss-room-wall {
+  position: absolute;
+  inset: 0;
+  background: var(--boss-wall);
+  border: 2px solid #3a2a1a;
+  overflow: hidden;
+}
+.boss-room-wall::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(0,0,0,0.08) 0, rgba(0,0,0,0.08) 8px,
+      transparent 8px, transparent 9px
+    );
+}
+.boss-room-label {
+  position: absolute;
+  top: 3px; left: 0; right: 0;
+  text-align: center;
+  font-size: 5px;
+  color: rgba(255,220,100,0.4);
+  letter-spacing: 2px;
+}
+.boss-room-door {
+  position: absolute;
+  bottom: 0; left: 50%;
+  transform: translateX(-50%);
+  width: 20px; height: 32px;
+  background: #8a5c30;
+  border: 2px solid #5a3a1a;
+  border-bottom: none;
+}
+.boss-room-door::after {
+  content: '';
+  position: absolute;
+  top: 50%; right: 4px;
+  width: 3px; height: 3px;
+  background: var(--kk-gold);
+  border-radius: 50%;
+  transform: translateY(-50%);
+}
+
+/* ===== 像素角色 ===== */
+.p-char {
+  position: absolute;
+  z-index: 10;
+  cursor: pointer;
+  user-select: none;
+}
+.p-char:hover { z-index: 20; }
+
+.char-sprite {
+  position: relative;
+  image-rendering: pixelated;
+}
+.px {
+  position: absolute;
+  width: 5px; height: 5px;
+  image-rendering: pixelated;
+}
+
+/* 角色动画 */
+.p-char.working .char-sprite {
+  animation: char-work 0.7s ease-in-out infinite;
+}
+.p-char.talking .char-sprite {
+  animation: char-talk 0.6s ease-in-out infinite;
+}
+.p-char.idle .char-sprite {
+  animation: char-idle 3s ease-in-out infinite;
+}
+.p-char.error .char-sprite {
+  animation: char-error 0.3s linear infinite;
+  filter: hue-rotate(20deg) saturate(2);
+}
+.p-char.offline .char-sprite {
+  filter: grayscale(1) opacity(0.4);
+}
+@keyframes char-work {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  30% { transform: translateY(-3px) rotate(-1deg); }
+  70% { transform: translateY(-1px) rotate(1deg); }
+}
+@keyframes char-talk {
+  0%, 100% { transform: scale(1) rotate(0deg); }
+  25% { transform: scale(1.04) rotate(1.5deg); }
+  75% { transform: scale(1.04) rotate(-1.5deg); }
+}
+@keyframes char-idle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+@keyframes char-error {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-2px); }
+  75% { transform: translateX(2px); }
+}
+
+/* 角色名牌 */
+.char-nameplate {
+  position: absolute;
+  bottom: -18px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  pointer-events: none;
+}
+.char-nameplate-text {
+  font-size: 5px;
+  color: rgba(255,255,255,0.5);
+}
+.char-nameplate-dot {
+  width: 5px; height: 5px;
+  border-radius: 1px;
+  flex-shrink: 0;
+}
+
+/* 状态气泡 */
+.char-bubble {
+  position: absolute;
+  bottom: 100%;
+  margin-bottom: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  max-width: 160px;
+  background: rgba(10, 15, 25, 0.92);
+  border: 2px solid rgba(255,255,255,0.12);
+  padding: 5px 8px;
+  font-size: 6px;
+  box-shadow: 3px 3px 0 rgba(0,0,0,0.6);
+  pointer-events: none;
+  transition: opacity 0.2s;
+  z-index: 30;
+}
+.char-bubble::after {
+  content: '';
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 3px solid transparent;
+  border-top-color: rgba(255,255,255,0.12);
+}
+.bubble-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.bubble-icon {
+  font-size: 7px;
+  line-height: 1;
+}
+.bubble-text {
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+.bubble-progress {
+  margin-top: 4px;
+  height: 3px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.06);
+}
+.bubble-progress-fill {
+  height: 100%;
+  transition: width 0.5s ease-out;
+}
+
+/* 悬浮信息面板（右上角固定） */
+.hover-panel {
+  position: absolute;
+  top: 10px; right: 10px;
+  width: 170px;
+  background: rgba(8,12,20,0.92);
+  border: 2px solid var(--border-hard);
+  z-index: 50;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+  box-shadow: 4px 4px 0 rgba(0,0,0,0.5);
+}
+.hover-panel.visible { opacity: 1; }
+
+.hover-panel-header {
+  padding: 6px 8px;
+  border-bottom: 2px solid var(--border-hard);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.hover-avatar {
+  width: 24px; height: 24px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  border: 2px solid rgba(255,255,255,0.1);
+  image-rendering: pixelated;
+}
+.hover-name {
+  font-size: 8px;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+.hover-role {
+  font-size: 5px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+.hover-body {
+  padding: 6px 8px;
+}
+.hover-status-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 5px;
+}
+.hover-status-indicator {
+  width: 6px; height: 6px;
+  border-radius: 1px;
+  flex-shrink: 0;
+}
+.hover-status-text {
+  font-size: 6px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  word-break: break-all;
+}
+.hover-divider {
+  height: 1px;
+  background: var(--border-hard);
+  margin: 4px 0;
+}
+.hover-meta {
+  font-size: 5px;
+  color: var(--text-dim);
+  display: flex;
+  justify-content: space-between;
+}
+
+/* ===== 底部状态栏 ===== */
+.status-bar {
+  flex-shrink: 0;
+  height: 26px;
+  background: rgba(0,0,0,0.7);
+  border-top: 2px solid var(--border-hard);
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  gap: 10px;
+  font-size: 6px;
+}
+.sb-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-secondary);
+}
+.sb-led {
+  width: 6px; height: 6px;
+  border-radius: 1px;
+  flex-shrink: 0;
+}
+.sb-led.on  { background: var(--status-online); animation: led-pulse 2s ease-in-out infinite; }
+.sb-led.off { background: var(--status-offline); }
+.sb-led.err { background: var(--status-error); animation: led-blink 0.5s linear infinite; }
+@keyframes led-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.sb-divider {
+  width: 1px; height: 14px;
+  background: var(--border-hard);
+  flex-shrink: 0;
+}
+.sb-agent {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-secondary);
+}
+.sb-agent-dot {
+  width: 5px; height: 5px;
+  border-radius: 1px;
+}
+.sb-right { margin-left: auto; color: var(--text-dim); }
+
+/* ===== CHAT PANEL (RIGHT 35%) ===== */
+.chat-panel {
+  flex: 0 0 35%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-chat);
+  min-width: 0;
+}
+
+/* Chat Header */
+.chat-header {
+  flex-shrink: 0;
+  padding: 0 12px;
+  height: 32px;
+  background: rgba(0,0,0,0.5);
+  border-bottom: 2px solid var(--border-hard);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.chat-title {
+  font-size: 8px;
+  color: var(--text-secondary);
+  letter-spacing: 1px;
+}
+.chat-online {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 6px;
+  color: var(--status-online);
+}
+.chat-online-dot {
+  width: 6px; height: 6px;
+  background: var(--status-online);
+  border-radius: 1px;
+  animation: led-pulse 2s ease-in-out infinite;
+}
+
+/* Member list strip */
+.chat-members {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-hard);
+  display: flex;
+  gap: 6px;
+  background: rgba(0,0,0,0.3);
+}
+.member-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border: 1px solid var(--border-hard);
+  font-size: 5px;
+  color: var(--text-dim);
+  background: rgba(255,255,255,0.02);
+}
+.member-chip.active {
+  border-color: currentColor;
+  color: var(--text-secondary);
+}
+.member-chip .m-dot {
+  width: 4px; height: 4px;
+  border-radius: 1px;
+}
+
+/* Messages */
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+.chat-messages::-webkit-scrollbar { width: 4px; }
+.chat-messages::-webkit-scrollbar-track { background: transparent; }
+.chat-messages::-webkit-scrollbar-thumb { background: var(--border-hard); }
+
+/* System message */
+.sys-msg {
+  text-align: center;
+  font-size: 5px;
+  color: var(--text-dim);
+  padding: 4px 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.sys-msg::before, .sys-msg::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border-hard);
+}
+
+/* Date separator */
+.date-sep {
+  text-align: center;
+  font-size: 5px;
+  color: var(--text-dim);
+  padding: 2px 0;
+}
+
+/* Message item */
+.msg-item {
+  display: flex;
+  gap: 7px;
+  align-items: flex-start;
+  animation: msg-appear 0.25s ease-out both;
+}
+@keyframes msg-appear {
+  from { opacity: 0; transform: translateY(5px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Avatar */
+.msg-avatar {
+  flex-shrink: 0;
+  width: 26px; height: 26px;
+  border: 2px solid rgba(255,255,255,0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-family: monospace;
+  image-rendering: pixelated;
+  overflow: hidden;
+}
+.msg-avatar img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  image-rendering: pixelated;
+}
+
+/* Message content */
+.msg-content { flex: 1; min-width: 0; }
+.msg-header {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 3px;
+}
+.msg-author { font-size: 6px; color: var(--text-secondary); }
+.msg-time   { font-size: 5px; color: var(--text-dim); }
+
+.msg-bubble {
+  padding: 6px 9px;
+  font-size: 7px;
+  line-height: 1.65;
+  word-break: break-word;
+  box-shadow: 2px 2px 0 rgba(0,0,0,0.4);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-hard);
+  border-left: 3px solid transparent;
+}
+
+/* Per-agent bubble accent */
+.msg-item[data-agent="cx"]     .msg-bubble { border-left-color: var(--cx-orange); }
+.msg-item[data-agent="cc"]     .msg-bubble { border-left-color: var(--cc-blue); }
+.msg-item[data-agent="xiaoma"] .msg-bubble { border-left-color: var(--xiaoma-green); }
+.msg-item[data-agent="hermes"] .msg-bubble { border-left-color: var(--hermes-purple); }
+.msg-item[data-agent="kk"]     .msg-bubble { border-left-color: var(--kk-gold); background: rgba(240,192,64,0.06); }
+
+/* KK self (right-align) */
+.msg-item.self {
+  flex-direction: row-reverse;
+  text-align: right;
+}
+.msg-item.self .msg-header { flex-direction: row-reverse; }
+.msg-item.self .msg-bubble {
+  border-left: 1px solid var(--border-hard);
+  border-right: 3px solid var(--kk-gold);
+  background: rgba(240,192,64,0.05);
+}
+
+/* Markdown elements */
+.md-code {
+  display: block;
+  background: rgba(0,0,0,0.5);
+  border: 1px solid rgba(255,255,255,0.1);
+  padding: 5px 7px;
+  font-size: 6px;
+  color: var(--screen-code);
+  margin: 4px 0;
+  font-family: monospace;
+  line-height: 1.7;
+  overflow-x: auto;
+  white-space: pre;
+}
+.md-bold { font-weight: bold; color: var(--text-primary); }
+.md-link { color: var(--cc-blue); text-decoration: underline; cursor: pointer; }
+.md-inline-code {
+  background: rgba(0,0,0,0.4);
+  border: 1px solid rgba(255,255,255,0.1);
+  padding: 1px 4px;
+  font-size: 6px;
+  color: var(--screen-code);
+  font-family: monospace;
+}
+
+/* Typing indicator */
+.typing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 0;
+  font-size: 6px;
+  color: var(--text-dim);
+}
+.typing-dots {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+}
+.typing-dot {
+  width: 4px; height: 4px;
+  background: var(--text-dim);
+  border-radius: 1px;
+  animation: typing-bounce 1s ease-in-out infinite;
+}
+.typing-dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes typing-bounce {
+  0%, 100% { opacity: 0.3; transform: translateY(0); }
+  50% { opacity: 1; transform: translateY(-2px); }
+}
+
+/* Offline notice */
+.offline-notice {
+  margin: 4px 0;
+  padding: 6px 10px;
+  background: rgba(248,113,113,0.06);
+  border: 1px solid rgba(248,113,113,0.2);
+  font-size: 6px;
+  color: var(--status-error);
+  display: none;
+}
+.offline-notice.show { display: block; }
+
+/* Chat input */
+.chat-input-area {
+  flex-shrink: 0;
+  padding: 8px;
+  border-top: 2px solid var(--border-hard);
+  background: rgba(0,0,0,0.3);
+}
+.input-row {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+.chat-input {
+  flex: 1;
+  background: rgba(255,255,255,0.04);
+  border: 2px solid var(--border-hard);
+  color: var(--text-primary);
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  padding: 7px 9px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.chat-input::placeholder { color: var(--text-dim); }
+.chat-input:focus { border-color: var(--kk-gold); }
+
+.chat-send {
+  background: var(--kk-gold);
+  border: none;
+  color: #1a1a00;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  padding: 6px 14px;
+  cursor: pointer;
+  box-shadow: 2px 2px 0 var(--kk-gold-dim);
+  transition: transform 0.08s, box-shadow 0.08s;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+.chat-send:hover { background: #ffd060; }
+.chat-send:active {
+  transform: translate(1px,1px);
+  box-shadow: 1px 1px 0 var(--kk-gold-dim);
+}
+.input-hint {
+  margin-top: 4px;
+  font-size: 5px;
+  color: var(--text-dim);
+  display: flex;
+  justify-content: space-between;
+}
+
+/* ===== AGENT COLOR MAP ===== */
+.agent-cx     { color: var(--cx-orange); }
+.agent-cc     { color: var(--cc-blue); }
+.agent-xiaoma { color: var(--xiaoma-green); }
+.agent-hermes { color: var(--hermes-purple); }
+.agent-kk     { color: var(--kk-gold); }
+.agent-vacant { color: var(--vacant-gray); }
+
+/* Agent avatar backgrounds */
+.avatar-cx     { background: rgba(255,170,102,0.15); border-color: rgba(255,170,102,0.3) !important; }
+.avatar-cc     { background: rgba(153,204,255,0.15); border-color: rgba(153,204,255,0.3) !important; }
+.avatar-xiaoma { background: rgba(136,221,136,0.15); border-color: rgba(136,221,136,0.3) !important; }
+.avatar-hermes { background: rgba(204,153,255,0.15); border-color: rgba(204,153,255,0.3) !important; }
+.avatar-kk     { background: rgba(240,192,64,0.15);  border-color: rgba(240,192,64,0.3) !important; }
+
+/* ===== MINI ANIMATIONS ===== */
+/* Clock hands */
+.p-clock {
+  position: absolute;
+  z-index: 4;
+}
+.clock-face {
+  width: 20px; height: 20px;
+  background: #f0e8d0;
+  border: 3px solid #3a2a1a;
+  border-radius: 50%;
+  position: relative;
+  overflow: hidden;
+}
+.clock-hand {
+  position: absolute;
+  bottom: 50%; left: 50%;
+  transform-origin: bottom center;
+  background: #1a1a1a;
+}
+.clock-min {
+  width: 1.5px; height: 7px;
+  margin-left: -0.75px;
+  animation: clock-min 40s linear infinite;
+}
+.clock-hour {
+  width: 2px; height: 5px;
+  margin-left: -1px;
+  animation: clock-hour 240s linear infinite;
+  opacity: 0.7;
+}
+@keyframes clock-min  { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes clock-hour { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+/* Treadmill */
+.p-treadmill {
+  position: absolute;
+  z-index: 3;
+}
+.treadmill-body {
+  width: 40px; height: 14px;
+  background: #3a3a4a;
+  border: 2px solid #2a2a3a;
+  overflow: hidden;
+  position: relative;
+}
+.treadmill-belt {
+  position: absolute;
+  top: 3px;
+  height: 8px;
+  width: 200%;
+  background: repeating-linear-gradient(
+    90deg,
+    #555 0, #555 8px,
+    #4a4a5a 8px, #4a4a5a 16px
+  );
+  animation: belt-move 0.8s linear infinite;
+}
+@keyframes belt-move {
+  from { left: 0; }
+  to   { left: -16px; }
+}
+.treadmill-frame {
+  width: 40px; height: 20px;
+  background: transparent;
+  border: 2px solid #666;
+  margin-top: -2px;
+  position: relative;
+}
+.treadmill-handle {
+  position: absolute;
+  top: -14px; left: 8px;
+  width: 24px; height: 12px;
+  border: 3px solid #888;
+  border-bottom: none;
+}
+
+/* Arcade */
+.p-arcade {
+  position: absolute;
+  z-index: 3;
+}
+.arcade-body {
+  width: 22px; height: 40px;
+  background: #2a1a3a;
+  border: 2px solid #1a1a2a;
+  position: relative;
+}
+.arcade-screen {
+  position: absolute;
+  top: 5px; left: 3px;
+  width: 16px; height: 14px;
+  background: #110022;
+  overflow: hidden;
+}
+.arcade-pixel {
+  position: absolute;
+  width: 3px; height: 3px;
+  animation: arcade-flash 0.5s step-start infinite;
+}
+.arcade-pixel:nth-child(1) { top:2px; left:2px; background:#ff44ff; }
+.arcade-pixel:nth-child(2) { top:2px; left:7px; background:#44ffff; animation-delay:0.1s; }
+.arcade-pixel:nth-child(3) { top:7px; left:4px; background:#ffff44; animation-delay:0.2s; }
+.arcade-pixel:nth-child(4) { top:7px; left:10px; background:#ff4444; animation-delay:0.15s; }
+@keyframes arcade-flash {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.1; }
+}
+.arcade-joystick {
+  position: absolute;
+  bottom: 6px; left: 5px;
+  width: 5px; height: 5px;
+  background: #888;
+  border-radius: 50%;
+}
+.arcade-btns {
+  position: absolute;
+  bottom: 6px; right: 4px;
+  display: flex;
+  gap: 2px;
+}
+.arcade-btn {
+  width: 4px; height: 4px;
+  border-radius: 50%;
+}
+.arcade-btn:nth-child(1) { background: #ff4444; }
+.arcade-btn:nth-child(2) { background: #4444ff; }
+
+/* Coffee machine */
+.p-coffee {
+  position: absolute;
+  z-index: 3;
+}
+.coffee-body {
+  width: 18px; height: 28px;
+  background: #222222;
+  border: 2px solid #444;
+  position: relative;
+}
+.coffee-panel {
+  position: absolute;
+  top: 3px; left: 2px;
+  width: 14px; height: 10px;
+  background: #111;
+  border: 1px solid #333;
+}
+.coffee-btn-row {
+  position: absolute;
+  top: 5px; left: 3px;
+  display: flex; gap: 2px;
+}
+.coffee-led-b { width:4px;height:4px;background:#4488ff;border-radius:1px;animation:led-blink 1.2s ease-in-out infinite; }
+.coffee-led-r { width:4px;height:4px;background:#ff4444;border-radius:1px;animation:led-blink 2s ease-in-out infinite reverse; }
+.coffee-spout {
+  position: absolute;
+  bottom: 5px; left: 50%;
+  transform: translateX(-50%);
+  width: 3px; height: 6px;
+  background: #555;
+  border-radius: 0 0 1px 1px;
+}
+.coffee-cup {
+  position: absolute;
+  bottom: -8px; left: 4px;
+  width: 10px; height: 8px;
+  background: #f0f0f0;
+  border: 1px solid #ccc;
+  clip-path: polygon(5% 0%, 95% 0%, 100% 100%, 0% 100%);
+}
+.steam {
+  position: absolute;
+  width: 2px;
+  background: rgba(255,255,255,0.4);
+  border-radius: 1px;
+  animation: steam-rise 1.5s ease-out infinite;
+}
+.steam:nth-child(1) { left: 5px; bottom: 16px; height: 6px; }
+.steam:nth-child(2) { left: 9px; bottom: 16px; height: 4px; animation-delay: 0.5s; }
+.steam:nth-child(3) { left: 13px; bottom: 16px; height: 7px; animation-delay: 1s; }
+@keyframes steam-rise {
+  0%   { transform: translateY(0) scaleX(1); opacity: 0.6; }
+  100% { transform: translateY(-14px) scaleX(0.3); opacity: 0; }
+}
+
+/* Pixel tree */
+.p-tree {
+  position: absolute;
+  z-index: 3;
+}
+.tree-pot {
+  width: 14px; height: 10px;
+  background: #8B4513;
+  border: 2px solid #5a2d0c;
+  margin: 0 auto;
+  clip-path: polygon(10% 0%, 90% 0%, 100% 100%, 0% 100%);
+}
+.tree-trunk { width: 4px; height: 8px; background: #5a3010; margin: 0 auto; }
+.tree-leaves {
+  width: 20px; height: 16px;
+  background: #2d7a2d;
+  clip-path: polygon(50% 0%, 100% 60%, 80% 60%, 100% 100%, 0% 100%, 20% 60%, 0% 60%);
+  margin: 0 auto;
+  animation: tree-sway 4s ease-in-out infinite;
+}
+.tree-leaves::after {
+  content: '';
+  position: absolute;
+  top: 2px; left: 3px;
+  width: 4px; height: 4px;
+  background: #3d9a3d;
+  border-radius: 50%;
+}
+@keyframes tree-sway {
+  0%, 100% { transform: rotate(-1deg); }
+  50% { transform: rotate(1deg); }
+}
+
+/* Whiteboard */
+.p-whiteboard {
+  position: absolute;
+  z-index: 4;
+}
+.wb-frame {
+  background: #f5f0e8;
+  border: 3px solid #5a3a1a;
+  box-shadow: 2px 2px 0 rgba(0,0,0,0.4);
+  padding: 4px;
+  position: relative;
+}
+.wb-content {
+  font-family: monospace;
+  font-size: 4px;
+  color: #2a2a3a;
+  line-height: 1.6;
+  white-space: pre;
+}
+.wb-marker {
+  position: absolute;
+  bottom: -8px; right: 4px;
+  width: 10px; height: 4px;
+  background: #3355cc;
+  border-radius: 1px;
+  transform: rotate(15deg);
+}
+
+/* Meeting table */
+.p-meeting {
+  position: absolute;
+  z-index: 3;
+}
+.meeting-table {
+  width: 80px; height: 40px;
+  background: #dbb46a;
+  border: 3px solid #9c7a4b;
+  box-shadow: 3px 3px 0 #7a5c2e, 0 0 0 6px rgba(0,0,0,0.1) inset;
+  position: relative;
+  border-radius: 4px;
+}
+.meeting-table::after {
+  content: '';
+  position: absolute;
+  top: 4px; left: 4px; right: 4px; bottom: 4px;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 2px;
+}
+.meeting-chair {
+  position: absolute;
+  width: 14px; height: 10px;
+  background: #3a3a5a;
+  border: 2px solid #2a2a4a;
+}
+
+/* ===== RESPONSIVE / SCALING ===== */
+@media (max-width: 1100px) {
+  .office-panel { flex: 0 0 60%; }
+  .chat-panel   { flex: 0 0 40%; }
+}
+</style>
+</head>
+<body>
+
+<div class="workspace">
+
+  <!-- ===== TITLE BAR ===== -->
+  <div class="title-bar">
+    <div class="title-bar-dots">
+      <div class="dot dot-red"></div>
+      <div class="dot dot-yellow"></div>
+      <div class="dot dot-green"></div>
+    </div>
+    <div class="title-bar-text">BKS PIXEL STUDIO · WORKSPACE</div>
+    <div class="title-bar-time" id="clockDisplay">--:--:--</div>
+  </div>
+
+  <!-- ===== MAIN SPLIT ===== -->
+  <div class="main-split">
+
+    <!-- ============================
+         OFFICE PANEL (LEFT)
+         ============================ -->
+    <div class="office-panel">
+      <div class="office-header">
+        <span class="office-title">◈ 工作室</span>
+        <span class="office-tag">v1.2</span>
+        <span class="office-tag" id="agentCount">4 AGENTS</span>
+      </div>
+
+      <div class="office-canvas" id="officeCanvas">
+        <!-- 环境层 -->
+        <div class="floor-tiles"></div>
+        <div class="wall-back"></div>
+        <div class="baseboard"></div>
+
+        <!-- 场景层 -->
+        <div class="scene" id="scene">
+
+          <!-- 区域标签 -->
+          <div class="zone-badge" style="top:12px; left:36px;">WORKSPACE</div>
+          <div class="zone-badge" style="bottom:60px; left:36px;">SERVER ROOM</div>
+          <div class="zone-badge" style="bottom:60px; right:80px;">LOUNGE</div>
+          <div class="zone-badge" style="top:12px; right:36px;">CEO OFFICE</div>
+
+          <!-- ===== 老板室（右上角） ===== -->
+          <div class="p-boss-room" style="top:20px; right:20px; width:130px; height:110px;">
+            <div class="boss-room-wall" style="position:absolute;inset:0;"></div>
+            <div class="boss-room-label">K K</div>
+            <div class="boss-room-door"></div>
+            <!-- 老板桌 -->
+            <div style="position:absolute; top:20px; left:15px;">
+              <div class="p-desk-top" style="width:80px; height:32px; background:#c09050; border-color:#8a6030;"></div>
+              <div class="p-desk-front" style="width:80px; background:#8a6030;"></div>
+            </div>
+            <!-- 老板显示器 -->
+            <div class="p-monitor" style="position:absolute; top:2px; left:50%; transform:translateX(-50%);">
+              <div class="p-monitor-frame" style="width:40px;height:28px;top:-32px;">
+                <div class="p-monitor-screen">
+                  <div class="screen-code-line">const roi=calc()</div>
+                  <div class="screen-code-line">team.deploy()</div>
+                  <div class="screen-code-line">report.gen()</div>
+                </div>
+              </div>
+              <div class="p-monitor-stand" style="width:4px;height:6px;"></div>
+              <div class="p-monitor-base" style="width:16px;height:3px;"></div>
+            </div>
+            <!-- KK 小人 -->
+            <div class="p-char working" id="charKK" data-id="kk"
+                 style="left:38px; top:8px;"
+                 onmouseenter="showPanel('kk')" onmouseleave="hidePanel()">
+              <div class="char-sprite" id="spriteKK" style="width:55px;height:60px;"></div>
+              <div class="char-nameplate">
+                <div class="char-nameplate-dot" style="background:var(--kk-gold);"></div>
+                <span class="char-nameplate-text agent-kk">KK</span>
+              </div>
+            </div>
+            <!-- 挂钟 -->
+            <div class="p-clock" style="top:8px; right:8px;">
+              <div class="clock-face">
+                <div class="clock-hand clock-min"></div>
+                <div class="clock-hand clock-hour" style="animation-delay:-40s;"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ===== 状态看板（左上角） ===== -->
+          <div class="p-board" style="top:24px; left:20px;">
+            <div class="p-board-frame">
+              <div class="board-title">SYSTEM</div>
+              <div class="board-row">
+                <span class="board-label">CPU</span>
+                <div class="board-bar-track"><div class="board-bar-fill" style="width:72%"></div></div>
+                <span class="board-val">72%</span>
+              </div>
+              <div class="board-row">
+                <span class="board-label">MEM</span>
+                <div class="board-bar-track"><div class="board-bar-fill warn" style="width:85%"></div></div>
+                <span class="board-val">85%</span>
+              </div>
+              <div class="board-row">
+                <span class="board-label">NET</span>
+                <div class="board-bar-track"><div class="board-bar-fill ok" style="width:40%"></div></div>
+                <span class="board-val">40%</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- ===== 主工位区域（6 个工位 3x2） ===== -->
+
+          <!-- 工位 0 - CX (代码工程师 / 橙) -->
+          <div class="p-desk" style="left:36px; top:95px;">
+            <div class="p-desk-top"></div>
+            <div class="p-desk-front"></div>
+            <div class="p-desk-leg l"></div>
+            <div class="p-desk-leg r"></div>
+          </div>
+          <div class="p-monitor" style="position:absolute; left:60px; top:60px;">
+            <div class="p-monitor-frame">
+              <div class="p-monitor-screen">
+                <div class="screen-code-line">fn main() {</div>
+                <div class="screen-code-line">  opt(A, B)</div>
+                <div class="screen-code-line">  engine()</div>
+                <div class="screen-code-line">  loop {}</div>
+                <div class="screen-code-line">}</div>
+              </div>
+            </div>
+            <div class="p-monitor-stand"></div>
+            <div class="p-monitor-base"></div>
+          </div>
+          <div class="p-chair" style="position:absolute;left:40px;top:155px;">
+            <div class="p-chair-back"></div>
+            <div class="p-chair-seat"></div>
+            <div class="p-chair-leg fl"></div>
+            <div class="p-chair-leg fr"></div>
+          </div>
+          <div class="p-plant" style="position:absolute;left:114px;top:92px;">
+            <div class="p-plant-leaf l"></div>
+            <div class="p-plant-leaf m"></div>
+            <div class="p-plant-leaf r"></div>
+            <div class="p-plant-soil"></div>
+            <div class="p-plant-pot"></div>
+          </div>
+          <div class="p-lamp on" style="position:absolute;left:40px;top:82px;">
+            <div class="p-lamp-head"></div>
+            <div class="p-lamp-pole"></div>
+            <div class="p-lamp-base"></div>
+          </div>
+          <!-- CX 角色 -->
+          <div class="p-char working" id="char0" data-id="cx"
+               style="left:48px; top:110px;"
+               onmouseenter="showPanel('cx')" onmouseleave="hidePanel()">
+            <div class="char-bubble" id="bubble0">
+              <div class="bubble-row">
+                <span class="bubble-icon">⚙</span>
+                <span class="bubble-text">优化核心引擎</span>
+              </div>
+              <div class="bubble-progress">
+                <div class="bubble-progress-fill" style="width:60%;background:var(--cx-orange);"></div>
+              </div>
+            </div>
+            <div class="char-sprite" id="sprite0" style="width:55px;height:60px;"></div>
+            <div class="char-nameplate">
+              <div class="char-nameplate-dot" style="background:var(--cx-orange);"></div>
+              <span class="char-nameplate-text agent-cx">CX</span>
+            </div>
+          </div>
+
+          <!-- 工位 1 - CC (软件架构师 / 蓝) -->
+          <div class="p-desk" style="left:152px; top:95px;">
+            <div class="p-desk-top"></div>
+            <div class="p-desk-front"></div>
+            <div class="p-desk-leg l"></div>
+            <div class="p-desk-leg r"></div>
+          </div>
+          <div class="p-monitor" style="position:absolute; left:176px; top:60px;">
+            <div class="p-monitor-frame">
+              <div class="p-monitor-screen">
+                <div class="screen-code-line">class Arch {</div>
+                <div class="screen-code-line">  microSvc()</div>
+                <div class="screen-code-line">  diagram()</div>
+                <div class="screen-code-line">  deploy()</div>
+                <div class="screen-code-line">}</div>
+              </div>
+            </div>
+            <div class="p-monitor-stand"></div>
+            <div class="p-monitor-base"></div>
+          </div>
+          <div class="p-chair" style="position:absolute;left:156px;top:155px;">
+            <div class="p-chair-back"></div>
+            <div class="p-chair-seat"></div>
+            <div class="p-chair-leg fl"></div>
+            <div class="p-chair-leg fr"></div>
+          </div>
+          <!-- CC 角色 -->
+          <div class="p-char working" id="char1" data-id="cc"
+               style="left:162px; top:110px;"
+               onmouseenter="showPanel('cc')" onmouseleave="hidePanel()">
+            <div class="char-bubble" id="bubble1">
+              <div class="bubble-row">
+                <span class="bubble-icon">📐</span>
+                <span class="bubble-text">绘制架构图纸</span>
+              </div>
+              <div class="bubble-progress">
+                <div class="bubble-progress-fill" style="width:45%;background:var(--cc-blue);"></div>
+              </div>
+            </div>
+            <div class="char-sprite" id="sprite1" style="width:55px;height:60px;"></div>
+            <div class="char-nameplate">
+              <div class="char-nameplate-dot" style="background:var(--cc-blue);"></div>
+              <span class="char-nameplate-text agent-cc">CC</span>
+            </div>
+          </div>
+
+          <!-- 工位 2 - 小马 (项目经理 / 绿) -->
+          <div class="p-desk" style="left:268px; top:95px;">
+            <div class="p-desk-top"></div>
+            <div class="p-desk-front"></div>
+            <div class="p-desk-leg l"></div>
+            <div class="p-desk-leg r"></div>
+          </div>
+          <div class="p-monitor" style="position:absolute; left:292px; top:60px;">
+            <div class="p-monitor-frame">
+              <div class="p-monitor-screen">
+                <div class="screen-code-line">sprint.plan()</div>
+                <div class="screen-code-line">task.assign()</div>
+                <div class="screen-code-line">kanban.upd()</div>
+                <div class="screen-code-line">review()</div>
+                <div class="screen-code-line">done ✓</div>
+              </div>
+            </div>
+            <div class="p-monitor-stand"></div>
+            <div class="p-monitor-base"></div>
+          </div>
+          <div class="p-chair" style="position:absolute;left:272px;top:155px;">
+            <div class="p-chair-back"></div>
+            <div class="p-chair-seat"></div>
+            <div class="p-chair-leg fl"></div>
+            <div class="p-chair-leg fr"></div>
+          </div>
+          <div class="p-plant" style="position:absolute;left:344px;top:92px;">
+            <div class="p-plant-leaf l"></div>
+            <div class="p-plant-leaf m"></div>
+            <div class="p-plant-leaf r"></div>
+            <div class="p-plant-soil"></div>
+            <div class="p-plant-pot"></div>
+          </div>
+          <!-- 小马角色 -->
+          <div class="p-char working" id="char2" data-id="xiaoma"
+               style="left:276px; top:110px;"
+               onmouseenter="showPanel('xiaoma')" onmouseleave="hidePanel()">
+            <div class="char-bubble" id="bubble2">
+              <div class="bubble-row">
+                <span class="bubble-icon">📋</span>
+                <span class="bubble-text">分配团队任务</span>
+              </div>
+              <div class="bubble-progress">
+                <div class="bubble-progress-fill" style="width:80%;background:var(--xiaoma-green);"></div>
+              </div>
+            </div>
+            <div class="char-sprite" id="sprite2" style="width:55px;height:60px;"></div>
+            <div class="char-nameplate">
+              <div class="char-nameplate-dot" style="background:var(--xiaoma-green);"></div>
+              <span class="char-nameplate-text agent-xiaoma">小马</span>
+            </div>
+          </div>
+
+          <!-- 工位 3 - Hermes (技术主管 / 紫) -->
+          <div class="p-desk" style="left:36px; top:220px;">
+            <div class="p-desk-top"></div>
+            <div class="p-desk-front"></div>
+            <div class="p-desk-leg l"></div>
+            <div class="p-desk-leg r"></div>
+          </div>
+          <div class="p-monitor" style="position:absolute; left:60px; top:185px;">
+            <div class="p-monitor-frame">
+              <div class="p-monitor-screen">
+                <div class="screen-code-line">coord.solve()</div>
+                <div class="screen-code-line">blocker.clr()</div>
+                <div class="screen-code-line">review.pr()</div>
+                <div class="screen-code-line">async(){}</div>
+                <div class="screen-code-line">next.step()</div>
+              </div>
+            </div>
+            <div class="p-monitor-stand"></div>
+            <div class="p-monitor-base"></div>
+          </div>
+          <div class="p-chair" style="position:absolute;left:40px;top:278px;">
+            <div class="p-chair-back"></div>
+            <div class="p-chair-seat"></div>
+            <div class="p-chair-leg fl"></div>
+            <div class="p-chair-leg fr"></div>
+          </div>
+          <!-- Hermes 角色 -->
+          <div class="p-char working" id="char3" data-id="hermes"
+               style="left:46px; top:232px;"
+               onmouseenter="showPanel('hermes')" onmouseleave="hidePanel()">
+            <div class="char-bubble" id="bubble3">
+              <div class="bubble-row">
+                <span class="bubble-icon">🔗</span>
+                <span class="bubble-text">跨模块协调</span>
+              </div>
+              <div class="bubble-progress">
+                <div class="bubble-progress-fill" style="width:55%;background:var(--hermes-purple);"></div>
+              </div>
+            </div>
+            <div class="char-sprite" id="sprite3" style="width:55px;height:60px;"></div>
+            <div class="char-nameplate">
+              <div class="char-nameplate-dot" style="background:var(--hermes-purple);"></div>
+              <span class="char-nameplate-text agent-hermes">Hermes</span>
+            </div>
+          </div>
+
+          <!-- 工位 4 - 空位A -->
+          <div class="p-desk" style="left:152px; top:220px; opacity:0.4;">
+            <div class="p-desk-top"></div>
+            <div class="p-desk-front"></div>
+            <div class="p-desk-leg l"></div>
+            <div class="p-desk-leg r"></div>
+          </div>
+          <div style="position:absolute; left:162px; top:233px; font-size:5px; color:var(--text-dim); text-align:center; width:80px;">
+            <div style="margin-bottom:4px;">?</div>
+            <div>待招聘</div>
+            <div style="margin-top:3px;color:#666;">TESSA / WENDY</div>
+          </div>
+
+          <!-- 工位 5 - 空位B -->
+          <div class="p-desk" style="left:268px; top:220px; opacity:0.4;">
+            <div class="p-desk-top"></div>
+            <div class="p-desk-front"></div>
+            <div class="p-desk-leg l"></div>
+            <div class="p-desk-leg r"></div>
+          </div>
+          <div style="position:absolute; left:278px; top:233px; font-size:5px; color:var(--text-dim); text-align:center; width:80px;">
+            <div style="margin-bottom:4px;">?</div>
+            <div>待招聘</div>
+            <div style="margin-top:3px;color:#666;">OWEN / POLLY</div>
+          </div>
+
+          <!-- ===== 白板（会议区） ===== -->
+          <div class="p-whiteboard" style="left:400px; top:110px;">
+            <div class="wb-frame" style="width:80px;height:54px;">
+              <div class="wb-content">SPRINT 23
+──────
+CX [▓▓▓▓▓░]
+CC [▓▓▓░░░]
+PM [▓▓▓▓░░]
+HR [▓▓░░░░]</div>
+            </div>
+            <div class="wb-marker"></div>
+          </div>
+
+          <!-- ===== 会议桌（中下） ===== -->
+          <div class="p-meeting" style="left:390px; top:195px;">
+            <div class="meeting-table">
+              <div class="meeting-chair" style="top:-8px;left:8px;"></div>
+              <div class="meeting-chair" style="top:-8px;left:28px;"></div>
+              <div class="meeting-chair" style="top:-8px;left:48px;"></div>
+              <div class="meeting-chair" style="bottom:-8px;left:8px;transform:rotate(180deg);"></div>
+              <div class="meeting-chair" style="bottom:-8px;left:28px;transform:rotate(180deg);"></div>
+              <div class="meeting-chair" style="bottom:-8px;left:48px;transform:rotate(180deg);"></div>
+            </div>
+          </div>
+
+          <!-- ===== 微型服务器机房（左下） ===== -->
+          <div class="p-server" style="left:24px; top:330px;">
+            <div class="p-server-body">
+              <div class="server-unit"><div class="server-led g"></div><div class="server-led b"></div></div>
+              <div class="server-unit"><div class="server-led g"></div><div class="server-led r"></div></div>
+              <div class="server-unit"><div class="server-led b"></div><div class="server-led g"></div></div>
+              <div class="server-unit"><div class="server-fan"></div></div>
+              <div class="server-unit"><div class="server-led r"></div><div class="server-led g"></div></div>
+            </div>
+          </div>
+          <div class="p-server" style="left:60px; top:330px;">
+            <div class="p-server-body">
+              <div class="server-unit"><div class="server-led g"></div><div class="server-led g"></div></div>
+              <div class="server-unit"><div class="server-led r"></div><div class="server-led b"></div></div>
+              <div class="server-unit"><div class="server-fan"></div></div>
+              <div class="server-unit"><div class="server-led g"></div><div class="server-led r"></div></div>
+              <div class="server-unit"><div class="server-led b"></div><div class="server-led b"></div></div>
+            </div>
+          </div>
+
+          <!-- ===== 休闲区（右下） ===== -->
+          <!-- 跑步机 -->
+          <div class="p-treadmill" style="right:120px; bottom:60px;">
+            <div class="treadmill-frame"><div class="treadmill-handle"></div></div>
+            <div class="treadmill-body"><div class="treadmill-belt"></div></div>
+          </div>
+
+          <!-- 街机 -->
+          <div class="p-arcade" style="right:70px; bottom:58px;">
+            <div class="arcade-body">
+              <div class="arcade-screen">
+                <div class="arcade-pixel"></div>
+                <div class="arcade-pixel"></div>
+                <div class="arcade-pixel"></div>
+                <div class="arcade-pixel"></div>
+              </div>
+              <div class="arcade-joystick"></div>
+              <div class="arcade-btns">
+                <div class="arcade-btn"></div>
+                <div class="arcade-btn"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 大树 -->
+          <div class="p-tree" style="right:32px; bottom:68px;">
+            <div class="tree-leaves"></div>
+            <div class="tree-trunk"></div>
+            <div class="tree-pot"></div>
+          </div>
+
+          <!-- ===== 公共区域 ===== -->
+          <!-- 饮水机 -->
+          <div class="p-cooler" style="left:120px; top:330px;">
+            <div class="p-cooler-bottle"></div>
+            <div class="p-cooler-body">
+              <div class="p-cooler-spout"></div>
+              <div class="p-cooler-buttons">
+                <div class="p-cooler-btn"></div>
+                <div class="p-cooler-btn cold"></div>
+              </div>
+              <div class="bubble" style="left:8px;bottom:20px;"></div>
+              <div class="bubble" style="left:12px;bottom:18px;"></div>
+              <div class="bubble" style="left:6px;bottom:22px;"></div>
+            </div>
+          </div>
+
+          <!-- 咖啡机 -->
+          <div class="p-coffee" style="left:156px; top:330px;">
+            <div class="coffee-body">
+              <div class="coffee-panel"></div>
+              <div class="coffee-btn-row">
+                <div class="coffee-led-b"></div>
+                <div class="coffee-led-r"></div>
+              </div>
+              <div class="coffee-spout"></div>
+              <div class="coffee-cup"></div>
+            </div>
+            <div class="steam" style="left:5px;"></div>
+            <div class="steam" style="left:9px;"></div>
+            <div class="steam" style="left:13px;"></div>
+          </div>
+
+        </div><!-- /scene -->
+
+        <!-- ===== 悬浮信息面板（右上角固定） ===== -->
+        <div class="hover-panel" id="hoverPanel">
+          <div class="hover-panel-header">
+            <div class="hover-avatar" id="hoverAvatar"></div>
+            <div>
+              <div class="hover-name" id="hoverName">--</div>
+              <div class="hover-role" id="hoverRole">--</div>
+            </div>
+          </div>
+          <div class="hover-body">
+            <div class="hover-status-row">
+              <div class="hover-status-indicator" id="hoverStatusDot"></div>
+              <div class="hover-status-text" id="hoverStatus">--</div>
+            </div>
+            <div class="hover-divider"></div>
+            <div class="hover-meta">
+              <span id="hoverState">--</span>
+              <span id="hoverTheme">--</span>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /office-canvas -->
+
+      <!-- ===== STATUS BAR ===== -->
+      <div class="status-bar">
+        <div class="sb-item">
+          <div class="sb-led on" id="wsLed"></div>
+          <span id="wsText">WS 已连接</span>
+        </div>
+        <div class="sb-divider"></div>
+        <div class="sb-agent">
+          <div class="sb-agent-dot" style="background:var(--cx-orange);"></div>
+          <span class="agent-cx">CX</span>
+        </div>
+        <div class="sb-agent">
+          <div class="sb-agent-dot" style="background:var(--cc-blue);"></div>
+          <span class="agent-cc">CC</span>
+        </div>
+        <div class="sb-agent">
+          <div class="sb-agent-dot" style="background:var(--xiaoma-green);"></div>
+          <span class="agent-xiaoma">小马</span>
+        </div>
+        <div class="sb-agent">
+          <div class="sb-agent-dot" style="background:var(--hermes-purple);"></div>
+          <span class="agent-hermes">Hermes</span>
+        </div>
+        <div class="sb-right">localhost:3210</div>
+      </div>
+
+    </div><!-- /office-panel -->
+
+
+    <!-- ============================
+         CHAT PANEL (RIGHT)
+         ============================ -->
+    <div class="chat-panel">
+
+      <div class="chat-header">
+        <span class="chat-title">◈ 团队群聊</span>
+        <span class="chat-online">
+          <span class="chat-online-dot"></span>4 在线
+        </span>
+      </div>
+
+      <!-- Members strip -->
+      <div class="chat-members">
+        <div class="member-chip active" style="color:var(--cx-orange);">
+          <div class="m-dot" style="background:var(--cx-orange);"></div>CX
+        </div>
+        <div class="member-chip active" style="color:var(--cc-blue);">
+          <div class="m-dot" style="background:var(--cc-blue);"></div>CC
+        </div>
+        <div class="member-chip active" style="color:var(--xiaoma-green);">
+          <div class="m-dot" style="background:var(--xiaoma-green);"></div>小马
+        </div>
+        <div class="member-chip active" style="color:var(--hermes-purple);">
+          <div class="m-dot" style="background:var(--hermes-purple);"></div>Hermes
+        </div>
+        <div class="member-chip" style="margin-left:auto;">
+          <div class="m-dot" style="background:var(--kk-gold);"></div>KK
+        </div>
+      </div>
+
+      <div class="chat-messages" id="chatMessages">
+        <div class="date-sep">— 2026-06-04 —</div>
+
+        <!-- CC -->
+        <div class="msg-item" data-agent="cc">
+          <div class="msg-avatar avatar-cc">🦀</div>
+          <div class="msg-content">
+            <div class="msg-header">
+              <span class="msg-author agent-cc">CC</span>
+              <span class="msg-time">14:30</span>
+            </div>
+            <div class="msg-bubble">
+              技术方案初稿已完成 ✅<br>
+              涉及 Node.js + Preact + Canvas 2D + SQLite
+            </div>
+          </div>
+        </div>
+
+        <!-- 小马 -->
+        <div class="msg-item" data-agent="xiaoma">
+          <div class="msg-avatar avatar-xiaoma">🐴</div>
+          <div class="msg-content">
+            <div class="msg-header">
+              <span class="msg-author agent-xiaoma">小马</span>
+              <span class="msg-time">14:32</span>
+            </div>
+            <div class="msg-bubble">
+              收到，我来审查。<br>
+              架构图可以考虑用 baoyu-diagram 画一下
+            </div>
+          </div>
+        </div>
+
+        <!-- CC with code -->
+        <div class="msg-item" data-agent="cc">
+          <div class="msg-avatar avatar-cc">🦀</div>
+          <div class="msg-content">
+            <div class="msg-header">
+              <span class="msg-author agent-cc">CC</span>
+              <span class="msg-time">14:35</span>
+            </div>
+            <div class="msg-bubble">
+              好的。数据库表结构 4 张：
+              <span class="md-code">agents / messages
+status_log / offline_queue</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Hermes -->
+        <div class="msg-item" data-agent="hermes">
+          <div class="msg-avatar avatar-hermes">⚡</div>
+          <div class="msg-content">
+            <div class="msg-header">
+              <span class="msg-author agent-hermes">Hermes</span>
+              <span class="msg-time">14:38</span>
+            </div>
+            <div class="msg-bubble">
+              WebSocket 对接方案我来负责，<br>
+              断线重连逻辑参考 <span class="md-inline-code">ws/handler.js</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 小马 -->
+        <div class="msg-item" data-agent="xiaoma">
+          <div class="msg-avatar avatar-xiaoma">🐴</div>
+          <div class="msg-content">
+            <div class="msg-header">
+              <span class="msg-author agent-xiaoma">小马</span>
+              <span class="msg-time">14:40</span>
+            </div>
+            <div class="msg-bubble">
+              评审通过 ✅ 等你们确认后 D1 开工。<br>
+              CC 先准备 spritesheet 资源验证
+            </div>
+          </div>
+        </div>
+
+        <!-- CX -->
+        <div class="msg-item" data-agent="cx">
+          <div class="msg-avatar avatar-cx">🔥</div>
+          <div class="msg-content">
+            <div class="msg-header">
+              <span class="msg-author agent-cx">CX</span>
+              <span class="msg-time">14:42</span>
+            </div>
+            <div class="msg-bubble">
+              引擎优化完成，跑分提升 <span class="md-bold">+38%</span><br>
+              <span class="md-code">benchmark: 980fps → 1350fps</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- KK (self) -->
+        <div class="msg-item self" data-agent="kk">
+          <div class="msg-avatar avatar-kk">👑</div>
+          <div class="msg-content">
+            <div class="msg-header">
+              <span class="msg-author agent-kk">KK</span>
+              <span class="msg-time">14:45</span>
+            </div>
+            <div class="msg-bubble">
+              方案看了，可以推进。<br>
+              另外原型里 CC 的角色图记得用他那个像素 sprite
+            </div>
+          </div>
+        </div>
+
+        <!-- 离线提示 -->
+        <div class="offline-notice" id="offlineNotice">
+          ⚠ 成员当前离线 · 消息已排队，上线后自动推送
+        </div>
+
+        <!-- Typing indicator (hidden by default) -->
+        <div class="typing-indicator" id="typingIndicator" style="display:none;">
+          <div class="msg-avatar avatar-cc" style="width:20px;height:20px;font-size:10px;">🦀</div>
+          <span id="typingAgent">CC</span>
+          <span style="color:var(--text-dim);">正在输入</span>
+          <div class="typing-dots">
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+          </div>
+        </div>
+
+      </div><!-- /chat-messages -->
+
+      <div class="chat-input-area">
+        <div class="input-row">
+          <input class="chat-input"
+                 id="chatInput"
+                 placeholder="KK 发言..."
+                 autocomplete="off"
+                 onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();sendMessage();}">
+          <button class="chat-send" onclick="sendMessage()">&gt;&gt;</button>
+        </div>
+        <div class="input-hint">
+          <span>Enter 发送</span>
+          <span id="charCount">0 / 200</span>
+        </div>
+      </div>
+
+    </div><!-- /chat-panel -->
+
+  </div><!-- /main-split -->
+</div><!-- /workspace -->
+
+
+<script>
+// ===== PIXEL ART DATA =====
+// 像素网格数据: 每个 key 对应颜色. '.' = transparent
+const SPRITES = {
+  // CX - 代码机器人 (11x12 grid)
+  cx: {
+    grid: [
+      '..BBBBB....',
+      '.B.....B...',
+      '.B.E.E.B...',
+      '.B.....B...',
+      '.BBBBBBB...',
+      'ABBBBBBBA..',
+      'A.B...B.A..',
+      '..B...B....',
+      '..BCCB.....',
+      '..B..B.....',
+      '..LLLL.....',
+    ],
+    colors: { B:'#ffaa66', A:'#cc7733', E:'#1a1a2e', C:'#ffddaa', L:'#cc7733' }
+  },
+  // CC - 螃蟹 (12x10 grid)
+  cc: {
+    grid: [
+      '...BBBBBB...',
+      '..B.BBBB.B..',
+      '.BBBBBBBBBB.',
+      'BBBBBBBBBBBB',
+      'BBBBBBBBBBBB',
+      '.B..BBBB..B.',
+      '..B......B..',
+      '...B....B...',
+      '....BBBB....',
+      '....E..E....',
+    ],
+    colors: { B:'#99ccff', E:'#1a2a4a' }
+  },
+  // 小马 - 赛马 (11x12 grid)
+  xiaoma: {
+    grid: [
+      '.....BBBB..',
+      '....MBBBBM.',
+      '...BBBBBBB.',
+      '..BBBBBBBBB',
+      '.BB.BBB.BB.',
+      '.BBBBBBBBB.',
+      '..BB.E.BB..',
+      '...BBBBB...',
+      '....BBB....',
+      '....B.B....',
+      '...BB.BB...',
+    ],
+    colors: { B:'#88dd88', M:'#55aa55', E:'#1a2e1a' }
+  },
+  // Hermes - 闪电使者 (11x12 grid)
+  hermes: {
+    grid: [
+      '.....BB....',
+      '....BBBB...',
+      '...B.BB.B..',
+      '..BBBBBBBB.',
+      '.BBBBBBBBBB',
+      '.BB.BBBB.BB',
+      '..BBBBBBBB.',
+      '...BBBBBB..',
+      '....B..B...',
+      '....BBBB...',
+      '...BB..BB..',
+    ],
+    colors: { B:'#cc99ff', L:'#9966cc' }
+  },
+  // KK - 王者 (11x12 grid)
+  kk: {
+    grid: [
+      '....BBBBB..',
+      '...GBBBBGB.',
+      '..BBBBBBBBB',
+      '..B.BBB.B..',
+      '..BBBBBBB..',
+      '.GBBBBBBGB.',
+      '.B.BBBBB.B.',
+      '..BBBBBBB..',
+      '...B...B...',
+      '...BBBBB...',
+      '....B.B....',
+    ],
+    colors: { B:'#f0c040', G:'#c8922a', E:'#1a1a00' }
+  }
+};
+
+const PX = 5; // pixel size
+
+function renderSprite(containerId, spriteKey) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  const data = SPRITES[spriteKey];
+  if (!data) { el.textContent = '?'; return; }
+
+  el.innerHTML = '';
+  const rows = data.grid;
+  for (let y = 0; y < rows.length; y++) {
+    for (let x = 0; x < rows[y].length; x++) {
+      const ch = rows[y][x];
+      if (ch === '.') continue;
+      const color = data.colors[ch] || '#ff00ff';
+      const div = document.createElement('div');
+      div.className = 'px';
+      div.style.cssText = `left:${x*PX}px;top:${y*PX}px;background:${color};`;
+      el.appendChild(div);
+    }
+  }
+}
+
+// ===== AGENT DATA =====
+const AGENTS = {
+  cx: {
+    name: 'CX',
+    role: '代码工程师',
+    color: '#ffaa66',
+    avatar: '🔥',
+    status: 'working',
+    task: '正在优化项目底层核心引擎',
+    progress: 60,
+    spriteKey: 'cx',
+    spriteId: 'sprite0'
+  },
+  cc: {
+    name: 'CC',
+    role: '软件架构师',
+    color: '#99ccff',
+    avatar: '🦀',
+    status: 'working',
+    task: '绘制系统微服务架构图纸',
+    progress: 45,
+    spriteKey: 'cc',
+    spriteId: 'sprite1'
+  },
+  xiaoma: {
+    name: '小马',
+    role: '项目经理',
+    color: '#88dd88',
+    avatar: '🐴',
+    status: 'working',
+    task: '拆解迭代需求，分配团队任务',
+    progress: 80,
+    spriteKey: 'xiaoma',
+    spriteId: 'sprite2'
+  },
+  hermes: {
+    name: 'Hermes',
+    role: '技术主管',
+    color: '#cc99ff',
+    avatar: '⚡',
+    status: 'working',
+    task: '跨模块沟通协调，解决卡点问题',
+    progress: 55,
+    spriteKey: 'hermes',
+    spriteId: 'sprite3'
+  },
+  kk: {
+    name: 'KK',
+    role: 'CEO · 决策者',
+    color: '#f0c040',
+    avatar: '👑',
+    status: 'working',
+    task: '战略规划，团队管理',
+    progress: 0,
+    spriteKey: 'kk',
+    spriteId: 'spriteKK'
+  }
+};
+
+// State cycling
+const STATES = ['working', 'talking', 'idle', 'error', 'offline'];
+const STATE_TASKS = {
+  cx:     { working:'优化核心引擎', talking:'讨论架构方案', idle:'休息中', error:'运行时崩溃', offline:'已离线' },
+  cc:     { working:'绘制架构图纸', talking:'评审代码设计', idle:'休息中', error:'构建失败', offline:'已离线' },
+  xiaoma: { working:'分配团队任务', talking:'讨论需求细节', idle:'休息中', error:'数据源超时', offline:'已离线' },
+  hermes: { working:'协调卡点问题', talking:'跨模块沟通', idle:'休息中', error:'接口不一致', offline:'已离线' },
+};
+const STATE_ICONS = { working:'⚙', talking:'💬', idle:'💤', error:'🐛', offline:'●' };
+
+// ===== INIT =====
+function init() {
+  // Render all sprites
+  Object.entries(AGENTS).forEach(([id, agent]) => {
+    renderSprite(agent.spriteId, agent.spriteKey);
+  });
+  updateClock();
+  setInterval(updateClock, 1000);
+}
+
+// ===== CLOCK =====
+function updateClock() {
+  const now = new Date();
+  const h = now.getHours().toString().padStart(2,'0');
+  const m = now.getMinutes().toString().padStart(2,'0');
+  const s = now.getSeconds().toString().padStart(2,'0');
+  const el = document.getElementById('clockDisplay');
+  if (el) el.textContent = `${h}:${m}:${s}`;
+}
+
+// ===== HOVER PANEL =====
+let panelTimer = null;
+
+function showPanel(agentId) {
+  clearTimeout(panelTimer);
+  const agent = AGENTS[agentId];
+  if (!agent) return;
+
+  const panel = document.getElementById('hoverPanel');
+  const avatar = document.getElementById('hoverAvatar');
+  const name   = document.getElementById('hoverName');
+  const role   = document.getElementById('hoverRole');
+  const status = document.getElementById('hoverStatus');
+  const dot    = document.getElementById('hoverStatusDot');
+  const state  = document.getElementById('hoverState');
+  const theme  = document.getElementById('hoverTheme');
+
+  avatar.textContent = agent.avatar;
+  avatar.style.background = `${agent.color}22`;
+  avatar.style.borderColor = `${agent.color}55`;
+  name.textContent = agent.name;
+  name.style.color = agent.color;
+  role.textContent = agent.role;
+  status.textContent = agent.task;
+  dot.style.background = agent.status === 'working' ? '#60a5fa' :
+                         agent.status === 'idle'    ? '#f59e0b' :
+                         agent.status === 'error'   ? '#f87171' :
+                         agent.status === 'offline' ? '#6b7280' : '#22c55e';
+  state.textContent = agent.status.toUpperCase();
+  theme.textContent = agent.color;
+  panel.classList.add('visible');
+}
+
+function hidePanel() {
+  panelTimer = setTimeout(() => {
+    document.getElementById('hoverPanel').classList.remove('visible');
+  }, 300);
+}
+
+// ===== CHAR STATE CYCLE (click) =====
+document.querySelectorAll('.p-char').forEach(el => {
+  el.addEventListener('click', () => {
+    const id = el.dataset.id;
+    const agent = AGENTS[id];
+    if (!agent || !STATE_TASKS[id]) return;
+
+    let idx = STATES.indexOf(agent.status);
+    idx = (idx + 1) % STATES.length;
+    agent.status = STATES[idx];
+    agent.task = STATE_TASKS[id][agent.status] || '...';
+
+    // Update class
+    STATES.forEach(s => el.classList.remove(s));
+    el.classList.add(agent.status);
+
+    // Update bubble
+    const bubbleEl = el.querySelector('.char-bubble');
+    if (bubbleEl) {
+      const iconEl = bubbleEl.querySelector('.bubble-icon');
+      const textEl = bubbleEl.querySelector('.bubble-text');
+      const fillEl = bubbleEl.querySelector('.bubble-progress-fill');
+      if (iconEl) iconEl.textContent = STATE_ICONS[agent.status] || '⚙';
+      if (textEl) textEl.textContent = agent.task;
+      if (fillEl) {
+        if (agent.status === 'working') {
+          fillEl.style.display = 'block';
+        } else {
+          fillEl.style.display = 'none';
+        }
+      }
+    }
+    checkOffline();
+  });
+});
+
+function checkOffline() {
+  const hasOffline = Object.values(AGENTS).some(a => a.status === 'offline');
+  const notice = document.getElementById('offlineNotice');
+  if (notice) notice.classList.toggle('show', hasOffline);
+}
+
+// ===== CHAT =====
+const AI_REPLIES = {
+  cx:     ['收到 👍', '好的，我来处理', '正在跑 benchmark', '性能测试通过', 'OK，开工！'],
+  cc:     ['明白了', '架构图更新中', '代码 review 通过', '已提交 PR', '好的老板'],
+  xiaoma: ['收到 👌', '任务已分配', '看板已更新', '进度同步完毕', '了解，跟进中'],
+  hermes: ['协调中...', '卡点已解决', '接口对齐完成', '收到，继续推进', 'Roger that'],
+};
+
+function addMessage(agentId, content, isSelf = false) {
+  const agent = AGENTS[agentId] || { name: agentId, color: '#ccc', avatar: '?', status: 'working' };
+  const now = new Date();
+  const time = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+
+  const item = document.createElement('div');
+  item.className = 'msg-item' + (isSelf ? ' self' : '');
+  item.dataset.agent = agentId;
+
+  const avatarClass = `avatar-${agentId}`;
+  item.innerHTML = `
+    <div class="msg-avatar ${avatarClass}">${agent.avatar}</div>
+    <div class="msg-content">
+      <div class="msg-header">
+        <span class="msg-author agent-${agentId}">${agent.name}</span>
+        <span class="msg-time">${time}</span>
+      </div>
+      <div class="msg-bubble">${content}</div>
+    </div>
+  `;
+
+  const container = document.getElementById('chatMessages');
+  const typing = document.getElementById('typingIndicator');
+  container.insertBefore(item, typing);
+  container.scrollTop = container.scrollHeight;
+}
+
+function showTyping(agentId) {
+  const agent = AGENTS[agentId];
+  if (!agent) return;
+  const el = document.getElementById('typingIndicator');
+  const avatar = el.querySelector('.msg-avatar');
+  const name = document.getElementById('typingAgent');
+  if (avatar) { avatar.textContent = agent.avatar; avatar.className = `msg-avatar avatar-${agentId}`; }
+  if (name) { name.textContent = agent.name; name.className = `agent-${agentId}`; }
+  el.style.display = 'flex';
+  const container = document.getElementById('chatMessages');
+  container.scrollTop = container.scrollHeight;
+}
+
+function hideTyping() {
+  const el = document.getElementById('typingIndicator');
+  if (el) el.style.display = 'none';
+}
+
+function sendMessage() {
+  const input = document.getElementById('chatInput');
+  const text = input.value.trim();
+  if (!text) return;
+
+  addMessage('kk', text, true);
+  input.value = '';
+  updateCharCount();
+
+  // Random AI reply
+  const aiIds = ['cx','cc','xiaoma','hermes'];
+  const replyId = aiIds[Math.floor(Math.random() * aiIds.length)];
+  const delay = 900 + Math.random() * 1800;
+
+  setTimeout(() => showTyping(replyId), delay - 400);
+  setTimeout(() => {
+    hideTyping();
+    const replies = AI_REPLIES[replyId] || ['收到'];
+    const reply = replies[Math.floor(Math.random() * replies.length)];
+    addMessage(replyId, reply);
+  }, delay);
+}
+
+// Char count
+const chatInput = document.getElementById('chatInput');
+if (chatInput) {
+  chatInput.addEventListener('input', updateCharCount);
+}
+function updateCharCount() {
+  const input = document.getElementById('chatInput');
+  const counter = document.getElementById('charCount');
+  if (input && counter) {
+    counter.textContent = `${input.value.length} / 200`;
+  }
+}
+
+// ===== RUN =====
+init();
+</script>
+</body>
+</html>
