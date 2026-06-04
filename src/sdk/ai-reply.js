@@ -46,6 +46,9 @@ const ALLOWED_DIRS = [
   'D:/BKS/projects',
 ];
 
+// 敏感文件扩展名黑名单
+const SENSITIVE_EXTS = ['.env', '.pem', '.key', '.crt', '.pfx', '.secret'];
+
 function validatePath(filePath, projectDir) {
   if (!filePath || typeof filePath !== 'string') {
     return { ok: false, error: '路径为空或无效' };
@@ -55,6 +58,19 @@ function validatePath(filePath, projectDir) {
   }
   const baseDir = resolve(projectDir);
   const targetPath = isAbsolute(filePath) ? resolve(filePath) : resolve(baseDir, filePath);
+
+  // 跨盘符检查（Windows 安全）
+  const targetRoot = targetPath.match(/^[a-zA-Z]:\//)?.[0] || '';
+  const baseRoot = baseDir.match(/^[a-zA-Z]:\//)?.[0] || '';
+  if (targetRoot && baseRoot && targetRoot.toLowerCase() !== baseRoot.toLowerCase()) {
+    return { ok: false, error: `禁止跨盘符写入: ${targetRoot} ≠ ${baseRoot}` };
+  }
+
+  // 敏感文件检查
+  const ext = targetPath.toLowerCase().match(/\.[^.]+$/)?.[0] || '';
+  if (SENSITIVE_EXTS.includes(ext)) {
+    return { ok: false, error: `禁止写入敏感文件 (${ext})` };
+  }
 
   // 检查是否在项目目录内
   const rel = relative(baseDir, targetPath);

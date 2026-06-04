@@ -317,6 +317,7 @@ async function handleMessage(raw) {
       if (isCodeTask && /timeout|超时/i.test(err.message)) {
         console.log(`[CX] DeepSeek 超时，降级到 GLM-4.7 重试`);
         modelOverride = { ...MODEL_TIERS.fallback };
+        processingStartTime = Date.now(); // 刷新看门狗计时，防止降级重试被误杀
         aiReply = await withProgress(cx, '降级重试中...', 50,
           () => generateReply(SYSTEM_PROMPT, chatHistory, prompt, true, modelOverride));
       } else {
