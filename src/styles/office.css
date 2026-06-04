@@ -1,5 +1,6 @@
-/* 像素办公室样式 */
+/* 像素办公室 Canvas 样式 — 填满容器 */
 .pixel-canvas {
+  display: block;
   width: 100%;
   height: 100%;
   image-rendering: pixelated;

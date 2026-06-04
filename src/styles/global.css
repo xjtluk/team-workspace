@@ -18,7 +18,7 @@
   --accent-gold: #FFD700;
   --font-pixel: 'Press Start 2P', monospace;
   --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --ws-right-width: 380px;
+  --ws-right-width: 456px;          /* 原380 + 1/5 = 456 */
   --ws-resize-handle: 6px;
   --ws-status-height: 32px;
 }
@@ -47,6 +47,7 @@ html, body {
   flex: 1;
   min-width: 400px;
   position: relative;
+  overflow: hidden;
 }
 
 .workspace-right {

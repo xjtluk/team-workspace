@@ -6,6 +6,7 @@ const AVATARS = {
   kk: '👑',
   cc: '/assets/clawd.png',
   xiaoma: '/assets/xiaoma.png',
+  hermes: '🔮',
   'xiaoma-ai': '🐴',
 };
 
@@ -13,6 +14,7 @@ const ALIGN = {
   kk: 'right',
   cc: 'left',
   xiaoma: 'left',
+  hermes: 'left',
   'xiaoma-ai': 'left',
 };
 
