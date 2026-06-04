@@ -58,7 +58,7 @@ process.env.OPENAI_API_KEY = selected.apiKey;
 process.env.OPENAI_MODEL = selected.model;
 
 console.log('[CX] 模型分层策略:');
-console.log('[CX]   日常:', CX_MODELS.normal.name, '(@CX [任务])');
+console.log('[CX]   日常:', CX_MODELS.normal.name, '(@CX [日常])');
 console.log('[CX]   代码:', CX_MODELS.code.name, '(@CX [代码])');
 console.log('[CX]   兜底:', CX_MODELS.fallback.name, '(DeepSeek不可用时)');
 console.log('[CX] 默认模型:', selected.name);

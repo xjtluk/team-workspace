@@ -119,11 +119,10 @@ async function withProgress(agent, startActivity, startProgress, asyncFn) {
 
 // ── 消息协议解析 ──
 const MSG_PROTOCOL = {
-  TASK_ASSIGN: /@CX\s*\[任务\]\s*(.+)/i,
+  DAILY_TASK: /@CX\s*\[日常\]\s*(.+)/i,
   CODE_TASK: /@CX\s*\[代码\]\s*(.+)/i,
   DELEGATE: /@CX\s*\[委托\]\s*(.+)/i,
   AT_CX: /@CX/i,
-  HARD_TASK: /\[困难\]/,
 };
 
 // ── 模型分层配置 ──
@@ -273,8 +272,8 @@ async function handleMessage(raw) {
   console.log(`[CX] 收到消息: ${content.substring(0, 80)}`);
 
   try {
-    // 模型选择：[代码] → DeepSeek V4 Pro，[困难] → DeepSeek V4 Pro，默认 → GLM-4.7-Flash
-    const isCodeTask = MSG_PROTOCOL.CODE_TASK.test(content) || MSG_PROTOCOL.HARD_TASK.test(content);
+    // 模型选择：[代码] → DeepSeek V4 Pro，默认 → GLM-4.7-Flash
+    const isCodeTask = MSG_PROTOCOL.CODE_TASK.test(content);
     let modelOverride = isCodeTask ? { ...MODEL_TIERS.code } : { ...MODEL_TIERS.normal };
     if (isCodeTask) {
       console.log(`[CX] 代码任务，使用: ${modelOverride.openaiModel}`);
@@ -295,9 +294,9 @@ async function handleMessage(raw) {
     if (MSG_PROTOCOL.CODE_TASK.test(content)) {
       const match = content.match(MSG_PROTOCOL.CODE_TASK);
       prompt = `CC 派发了代码任务（需要高质量实现）：${match[1]}\n\n请执行任务，完成后回复 @CC [完成] 并附上文件路径。`;
-    } else if (MSG_PROTOCOL.TASK_ASSIGN.test(content)) {
-      const match = content.match(MSG_PROTOCOL.TASK_ASSIGN);
-      prompt = `CC 派发了任务：${match[1]}\n\n请执行任务，完成后回复 @CC [完成] 并附上文件路径。`;
+    } else if (MSG_PROTOCOL.DAILY_TASK.test(content)) {
+      const match = content.match(MSG_PROTOCOL.DAILY_TASK);
+      prompt = `CC 派发了日常任务：${match[1]}\n\n请执行任务，完成后回复 @CC [完成] 并附上文件路径。`;
     } else if (MSG_PROTOCOL.DELEGATE.test(content)) {
       const match = content.match(MSG_PROTOCOL.DELEGATE);
       prompt = `CC 内部委托：${match[1]}\n\n请执行委托，完成后回复 @CC [完成]。`;
