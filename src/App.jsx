@@ -6,7 +6,6 @@ import { StatusBar } from './components/StatusBar/StatusBar.jsx';
 import { ResizeHandle } from './components/ResizeHandle/ResizeHandle.jsx';
 import { InfoPanel } from './components/InfoPanel/InfoPanel.jsx';
 import { useWS } from './ws/client.js';
-import './App.css';
 
 // 工位悬停状态信号
 const hoverSignal = signal({ target: null, visible: false });
