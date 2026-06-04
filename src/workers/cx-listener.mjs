@@ -246,6 +246,12 @@ async function handleMessage(raw) {
   const p = msg.payload;
   if (!p || !p.content) return;
 
+  // 消息过期检查 — 超过 5 分钟的消息直接丢弃
+  if (p.timestamp && Date.now() - p.timestamp > 5 * 60 * 1000) {
+    console.log(`[CX] 跳过过期消息: ${p.id || 'unknown'} (${Math.floor((Date.now() - p.timestamp) / 1000)}秒前)`);
+    return;
+  }
+
   // 忽略自己发的消息
   if (p.from === 'cx') return;
 
