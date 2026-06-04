@@ -491,10 +491,10 @@ function executeTool(name, input) {
  */
 export async function generateReply(systemPrompt, history, userMessage, useTools = true, modelOverride) {
   // 鏁翠綋瓒呮椂淇濇姢锛?80 绉掞紝宸ュ叿璋冪敤杞澶氭椂闇€瑕佹洿闀挎椂闂达級
-  const TASK_TIMEOUT = 180000;
+  const TASK_TIMEOUT = parseInt(process.env.AI_TASK_TIMEOUT) || 300000; // 默认300秒，可通过.env配置
   const taskPromise = _generateReply(systemPrompt, history, userMessage, useTools, modelOverride);
   const timeoutPromise = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error('浠诲姟瓒呮椂 (120s)')), TASK_TIMEOUT)
+    setTimeout(() => reject(new Error(`任务超时 (${TASK_TIMEOUT/1000}s)`)), TASK_TIMEOUT)
   );
   return Promise.race([taskPromise, timeoutPromise]);
 }

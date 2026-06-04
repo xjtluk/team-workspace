@@ -168,10 +168,15 @@ async function handleMessage(raw) {
       return;
     }
 
-    // 截断过长消息（群聊不适合发长文）
+    // 超长消息写入文件，发送摘要
     let sendText = safeText;
-    if (sendText.length > 500) {
-      sendText = sendText.substring(0, 497) + '...';
+    const maxLen = parseInt(process.env.XIAOMA_MAX_REPLY_LENGTH) || 500;
+    if (sendText.length > maxLen) {
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const replyFile = `D:/BKS/team/通信/小马AI回复_${timestamp}.md`;
+      writeFileSync(replyFile, `# 小马AI 回复 (${new Date().toLocaleString('zh-CN')})\n\n${sendText}`, 'utf-8');
+      const summary = sendText.substring(0, 200).replace(/\n/g, ' ').trim();
+      sendText = `[回复较长，已写入文件] ${summary}...\n完整内容: ${replyFile}`;
     }
 
     // 判断回复频道

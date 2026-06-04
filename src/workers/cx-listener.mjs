@@ -325,13 +325,20 @@ async function handleMessage(raw) {
     const cleanedReply = cleanToolCallTags(aiReply);
 
     if (cleanedReply && cleanedReply.trim()) {
-      const maxLen = 2000;
-      const finalReply = cleanedReply.length > maxLen
-        ? cleanedReply.substring(0, maxLen) + '\n\n...(消息过长，已截断)'
-        : cleanedReply;
-
-      await cx.send(finalReply);
-      console.log(`[CX] 回复已发送 (${finalReply.length} 字符)`);
+      const maxLen = parseInt(process.env.CX_MAX_REPLY_LENGTH) || 2000;
+      if (cleanedReply.length > maxLen) {
+        // 超长：写入文件 + 发送摘要
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const replyFile = `D:/BKS/team/通信/CX回复_${timestamp}.md`;
+        const fs = await import('fs');
+        fs.default.writeFileSync(replyFile, `# CX 回复 (${new Date().toLocaleString('zh-CN')})\n\n${cleanedReply}`, 'utf-8');
+        const summary = cleanedReply.substring(0, 300).replace(/\n/g, ' ').trim();
+        await cx.send(`@CC [完成] 任务完成，回复较长(${cleanedReply.length}字符)，已写入文件\n\n摘要: ${summary}...\n\n完整内容: ${replyFile}`);
+        console.log(`[CX] 回复已写入文件 (${cleanedReply.length} 字符) -> ${replyFile}`);
+      } else {
+        await cx.send(cleanedReply);
+        console.log(`[CX] 回复已发送 (${cleanedReply.length} 字符)`);
+      }
     } else {
       await cx.send('@CC [问题] 任务执行失败：AI 返回空回复');
     }
