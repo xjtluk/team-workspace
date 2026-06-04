@@ -752,8 +752,9 @@ function drawDashboardCards(ctx, agents) {
       working: '工作中', idle: '空闲中', talking: '讨论中',
       error: '异常', offline: '离线',
     }[status] || status.toUpperCase();
+    // 状态颜色：空闲=绿，工作中=黄，异常=红，离线=灰
     const statusColor = {
-      working: '#44ff44', idle: '#FFD700', talking: '#44aaff',
+      working: '#FFD700', idle: '#44ff44', talking: '#44aaff',
       error: '#ff4444', offline: '#888',
     }[status] || '#888';
 
@@ -813,21 +814,16 @@ function drawDashboardCards(ctx, agents) {
     ctx.arc(cx + 14, cy + 82, 8, 0, Math.PI * 2);
     ctx.fill();
 
-    // 状态文本
+    // 状态文本（含任务步骤）
     ctx.font = '6px "Press Start 2P"';
     ctx.fillStyle = statusColor;
     ctx.textAlign = 'start';
-    ctx.fillText(statusText, cx + 24, cy + 85);
-
-    // activity 概况（12字截断）
-    if (agent && agent.activity) {
-      const summary = agent.activity.length > 12 ? agent.activity.substring(0, 12) + '..' : agent.activity;
-      ctx.font = '4px "Press Start 2P"';
-      ctx.fillStyle = 'rgba(255,255,240,0.35)';
-      ctx.textAlign = 'center';
-      ctx.fillText(summary, cx + cardW / 2, cy + 94);
-      ctx.textAlign = 'start';
+    let displayStatus = statusText;
+    if (status === 'working' && agent && agent.activity) {
+      const step = agent.activity.length > 8 ? agent.activity.substring(0, 8) + '..' : agent.activity;
+      displayStatus = `${statusText}:${step}`;
     }
+    ctx.fillText(displayStatus, cx + 24, cy + 85);
 
     // 进度条（工作中）
     if (status === 'working' && agent && agent.progress > 0) {
