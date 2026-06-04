@@ -58,36 +58,21 @@ checkSingleInstance();
 // ── 项目路径 ──
 const PROJECT_DIR = process.env.PROJECT_DIR || 'D:/BKS/projects/team-workspace';
 console.log(`[CX] 项目目录: ${PROJECT_DIR}`);
-console.log(`[CX] 环境变量检查: AI_BACKEND=${process.env.AI_BACKEND}, OPENAI_MODEL=${process.env.OPENAI_MODEL}, OPENAI_BASE_URL=${process.env.OPENAI_BASE_URL}`);
 
-// 环境变量兜底：如果 AI_BACKEND 未设置，强制使用 OpenAI 兼容模式（SiliconFlow）
+// 环境变量兜底：如果 AI_BACKEND 未设置，默认使用智谱 GLM-4.7-Flash
 if (!process.env.AI_BACKEND) {
-  console.warn('[CX] 警告: AI_BACKEND 未设置，使用默认 SiliconFlow 配置');
   process.env.AI_BACKEND = 'openai';
-  process.env.OPENAI_BASE_URL = process.env.OPENAI_BASE_URL || 'https://api.siliconflow.cn/v1';
-  
-  // ✅ 修复 3.4：多级 fallback 获取 API Key
-  const apiKey = process.env.OPENAI_API_KEY 
-    || process.env.SILICONFLOW_API_KEY 
-    || process.env.ARK_API_KEY
-    || process.env.ZHIPU_API_KEY_CX;
-  
-  if (!apiKey) {
-    console.error('[CX] ❌ 错误: 无可用 API Key');
-    console.error('[CX] 请确保以下至少一个环境变量已设置:');
-    console.error('[CX]   - OPENAI_API_KEY');
-    console.error('[CX]   - SILICONFLOW_API_KEY');
-    console.error('[CX]   - ARK_API_KEY');
-    console.error('[CX]   - ZHIPU_API_KEY_CX');
-    console.error('[CX] 或在 .env 文件中配置');
+  process.env.OPENAI_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4';
+  process.env.OPENAI_API_KEY = process.env.ZHIPU_API_KEY_XIAOMA || process.env.ZHIPU_API_KEY_CX || '';
+  process.env.OPENAI_MODEL = 'glm-4.7-flash';
+
+  if (!process.env.OPENAI_API_KEY) {
+    console.error('[CX] ❌ 错误: 智谱 API Key 未设置');
+    console.error('[CX] 请确保 .env 中有 ZHIPU_API_KEY_XIAOMA 或 ZHIPU_API_KEY_CX');
     process.exit(1);
   }
-  
-  process.env.OPENAI_API_KEY = apiKey;
-  process.env.OPENAI_MODEL = process.env.OPENAI_MODEL || 'deepseek-ai/DeepSeek-V4-Pro';
-  
-  console.log(`[CX] ✅ 使用 API Key 前缀: ${apiKey.substring(0, 10)}...`);
-  console.log(`[CX] ✅ 使用模型: ${process.env.OPENAI_MODEL}`);
+
+  console.log(`[CX] ✅ 默认模型: GLM-4.7-Flash（智谱永久免费）`);
 }
 
 // ── 加载记忆 ──
@@ -135,21 +120,35 @@ async function withProgress(agent, startActivity, startProgress, asyncFn) {
 // ── 消息协议解析 ──
 const MSG_PROTOCOL = {
   TASK_ASSIGN: /@CX\s*\[任务\]\s*(.+)/i,
+  CODE_TASK: /@CX\s*\[代码\]\s*(.+)/i,
   DELEGATE: /@CX\s*\[委托\]\s*(.+)/i,
   AT_CX: /@CX/i,
   HARD_TASK: /\[困难\]/,
 };
 
-// ── 模型配置 ──
-const MODEL_NORMAL = {
-  model: process.env.OPENAI_MODEL || 'deepseek-ai/DeepSeek-V4-Pro',
-  baseUrl: process.env.OPENAI_BASE_URL || 'https://api.siliconflow.cn/v1',
-  apiKey: process.env.OPENAI_API_KEY || '',
-};
-const MODEL_HARD = {
-  model: 'ep-20260602221934-5wjk7',  // 火山方舟 GLM-4.7 端点
-  baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
-  apiKey: process.env.ARK_API_KEY || '',
+// ── 模型分层配置 ──
+const MODEL_TIERS = {
+  // 日常: GLM-4.7-Flash（快速、稳定、永久免费）
+  normal: {
+    backend: 'openai',
+    openaiModel: 'glm-4.7-flash',
+    openaiBaseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    openaiApiKey: process.env.ZHIPU_API_KEY_XIAOMA || process.env.ZHIPU_API_KEY_CX,
+  },
+  // 代码: DeepSeek V4 Pro（强推理，@CX [代码] 触发）
+  code: {
+    backend: 'openai',
+    openaiModel: 'deepseek-ai/DeepSeek-V4-Pro',
+    openaiBaseUrl: 'https://api.siliconflow.cn/v1',
+    openaiApiKey: process.env.SILICONFLOW_API_KEY,
+  },
+  // 兜底: GLM-4.7（DeepSeek 不可用时降级，省着用）
+  fallback: {
+    backend: 'openai',
+    openaiModel: 'glm-4.7',
+    openaiBaseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    openaiApiKey: process.env.ZHIPU_API_KEY_CX,
+  },
 };
 
 // ── 系统提示词 ──
@@ -274,22 +273,13 @@ async function handleMessage(raw) {
   console.log(`[CX] 收到消息: ${content.substring(0, 80)}`);
 
   try {
-    // 检测 [困难] 标记，通过 modelOverride 切换模型（不修改 process.env，避免并发竞态）
-    // 所有消息都使用 modelOverride，避免 getConfig() 读到错误的环境变量
-    const isHardTask = MSG_PROTOCOL.HARD_TASK.test(content);
-    const modelOverride = isHardTask ? {
-      backend: 'openai',
-      openaiModel: MODEL_HARD.model,
-      openaiBaseUrl: MODEL_HARD.baseUrl,
-      openaiApiKey: MODEL_HARD.apiKey,
-    } : {
-      backend: 'openai',
-      openaiModel: MODEL_NORMAL.model,
-      openaiBaseUrl: MODEL_NORMAL.baseUrl,
-      openaiApiKey: MODEL_NORMAL.apiKey,
-    };
-    if (isHardTask) {
-      console.log(`[CX] 检测到 [困难] 标记，使用: ${MODEL_HARD.model} (${MODEL_HARD.baseUrl})`);
+    // 模型选择：[代码] → DeepSeek V4 Pro，[困难] → DeepSeek V4 Pro，默认 → GLM-4.7-Flash
+    const isCodeTask = MSG_PROTOCOL.CODE_TASK.test(content) || MSG_PROTOCOL.HARD_TASK.test(content);
+    let modelOverride = isCodeTask ? { ...MODEL_TIERS.code } : { ...MODEL_TIERS.normal };
+    if (isCodeTask) {
+      console.log(`[CX] 代码任务，使用: ${modelOverride.openaiModel}`);
+    } else {
+      console.log(`[CX] 日常任务，使用: ${modelOverride.openaiModel}`);
     }
 
     // 加载聊天历史
@@ -302,7 +292,10 @@ async function handleMessage(raw) {
     // 构建 prompt
     let prompt = '';
 
-    if (MSG_PROTOCOL.TASK_ASSIGN.test(content)) {
+    if (MSG_PROTOCOL.CODE_TASK.test(content)) {
+      const match = content.match(MSG_PROTOCOL.CODE_TASK);
+      prompt = `CC 派发了代码任务（需要高质量实现）：${match[1]}\n\n请执行任务，完成后回复 @CC [完成] 并附上文件路径。`;
+    } else if (MSG_PROTOCOL.TASK_ASSIGN.test(content)) {
       const match = content.match(MSG_PROTOCOL.TASK_ASSIGN);
       prompt = `CC 派发了任务：${match[1]}\n\n请执行任务，完成后回复 @CC [完成] 并附上文件路径。`;
     } else if (MSG_PROTOCOL.DELEGATE.test(content)) {
@@ -314,11 +307,24 @@ async function handleMessage(raw) {
 
     // 生成回复（启用工具调用，CX 需要 bash/read_file/write_file 等工具执行任务）
     // modelOverride 直接传入，无需修改/恢复 process.env
-    const aiReply = await withProgress(cx, '正在分析任务...', 30,
-      () => generateReply(SYSTEM_PROMPT, chatHistory, prompt, true, modelOverride));
+    let aiReply;
+    try {
+      aiReply = await withProgress(cx, '正在分析任务...', 30,
+        () => generateReply(SYSTEM_PROMPT, chatHistory, prompt, true, modelOverride));
+    } catch (err) {
+      // 代码任务超时时，降级到 GLM-4.7 重试
+      if (isCodeTask && /timeout|超时/i.test(err.message)) {
+        console.log(`[CX] DeepSeek 超时，降级到 GLM-4.7 重试`);
+        modelOverride = { ...MODEL_TIERS.fallback };
+        aiReply = await withProgress(cx, '降级重试中...', 50,
+          () => generateReply(SYSTEM_PROMPT, chatHistory, prompt, true, modelOverride));
+      } else {
+        throw err;
+      }
+    }
 
-    if (isHardTask) {
-      console.log(`[CX] [困难] 任务完成`);
+    if (isCodeTask) {
+      console.log(`[CX] 代码任务完成`);
     }
 
     // 清洗并发送
