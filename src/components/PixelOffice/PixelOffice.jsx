@@ -678,7 +678,7 @@ function drawDashboard(ctx, x, y, w, h) {
   ctx.font = '12px "Press Start 2P"';
   ctx.fillStyle = '#f8f8e8';
   ctx.textAlign = 'center';
-  ctx.fillText('TEAM BOARD', x + w / 2, boardY + 28);
+  ctx.fillText('团队看板', x + w / 2, boardY + 28);
 
   // 标题下划线
   ctx.fillStyle = '#f8f8e8';
@@ -687,7 +687,7 @@ function drawDashboard(ctx, x, y, w, h) {
   // 副标题
   ctx.font = '7px "Press Start 2P"';
   ctx.fillStyle = 'rgba(255,255,240,0.6)';
-  ctx.fillText('STATUS REPORT', x + w / 2, boardY + 50);
+  ctx.fillText('状态报告', x + w / 2, boardY + 50);
 
   // === 4个角色卡片占位（2×2）===
   // 卡片由 drawDashboardCards() 动态绘制
@@ -749,8 +749,8 @@ function drawDashboardCards(ctx, agents) {
     const theme = AGENT_THEMES[agentId] || '#aaa';
     const status = agent ? agent.status : 'offline';
     const statusText = {
-      working: 'WORKING', idle: 'IDLE', talking: 'TALKING',
-      error: 'ERROR', offline: 'OFFLINE',
+      working: '工作中', idle: '空闲中', talking: '讨论中',
+      error: '异常', offline: '离线',
     }[status] || status.toUpperCase();
     const statusColor = {
       working: '#44ff44', idle: '#FFD700', talking: '#44aaff',
@@ -819,6 +819,16 @@ function drawDashboardCards(ctx, agents) {
     ctx.textAlign = 'start';
     ctx.fillText(statusText, cx + 24, cy + 85);
 
+    // activity 概况（12字截断）
+    if (agent && agent.activity) {
+      const summary = agent.activity.length > 12 ? agent.activity.substring(0, 12) + '..' : agent.activity;
+      ctx.font = '4px "Press Start 2P"';
+      ctx.fillStyle = 'rgba(255,255,240,0.35)';
+      ctx.textAlign = 'center';
+      ctx.fillText(summary, cx + cardW / 2, cy + 94);
+      ctx.textAlign = 'start';
+    }
+
     // 进度条（工作中）
     if (status === 'working' && agent && agent.progress > 0) {
       ctx.fillStyle = 'rgba(255,255,255,0.1)';
@@ -833,7 +843,7 @@ function drawDashboardCards(ctx, agents) {
       ctx.font = '5px "Press Start 2P"';
       ctx.fillStyle = '#666';
       ctx.textAlign = 'center';
-      ctx.fillText('(AWAY)', cx + cardW / 2, cy + 106);
+      ctx.fillText('(离线)', cx + cardW / 2, cy + 106);
     }
 
     ctx.textAlign = 'start';
@@ -1901,17 +1911,15 @@ const BUBBLE_COLORS = {
 };
 
 function drawBubble(ctx, agent, x, y) {
-  if (!agent.activity && agent.status !== 'offline') return;
-  const text = agent.status === 'offline' ? '离线' : agent.activity;
+  // 气泡只在空闲/讨论时显示，不显示工作细节
+  if (agent.status !== 'idle' && agent.status !== 'talking') return;
+  const text = agent.activity || (agent.status === 'idle' ? '等任务...' : '');
   if (!text) return;
 
-  const icon = BUBBLE_ICONS[agent.status] || BUBBLE_ICONS.idle;
-  const colors = BUBBLE_COLORS[agent.status] || BUBBLE_COLORS.idle;
+  const icon = agent.status === 'talking' ? BUBBLE_ICONS.talking : BUBBLE_ICONS.idle;
+  const colors = agent.status === 'talking' ? BUBBLE_COLORS.talking : BUBBLE_COLORS.idle;
 
-  const typingProgress = agent.progress || 0;
-  const displayText = agent.status === 'working'
-    ? `${icon} ${text.substring(0, Math.ceil(text.length * typingProgress / 100))}`
-    : `${icon} ${text}`;
+  const displayText = `${icon} ${text}`;
 
   ctx.font = '11px "Press Start 2P"';
   const textWidth = ctx.measureText(displayText).width;
@@ -1939,10 +1947,6 @@ function drawBubble(ctx, agent, x, y) {
 
   ctx.fillStyle = '#FFFFFF';
   ctx.fillText(displayText, bx + 12, by + 18);
-
-  if (agent.status === 'working' && agent.progress > 0) {
-    drawCircularProgress(ctx, bx + bubbleW + 4, by + bubbleH / 2, 8, agent.progress / 100, colors.border);
-  }
 }
 
 function drawCircularProgress(ctx, cx, cy, radius, percent, color) {

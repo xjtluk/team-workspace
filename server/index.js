@@ -4,7 +4,7 @@ import { WebSocketServer } from 'ws';
 import { randomBytes } from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { initDB } from './db.js';
+import { initDB, query } from './db.js';
 import { setupWS } from './ws/handler.js';
 import statusRouter from './routes/status.js';
 import messageRouter from './routes/message.js';
@@ -63,14 +63,29 @@ async function start() {
   });
   setupWS(wss);
 
-  // 健康检查
+  // 健康检查（含 agent 心跳状态）
   const startTime = Date.now();
+  const HEARTBEAT_TIMEOUT = 120000; // 120秒无心跳视为 unhealthy
   app.get('/api/health', (req, res) => {
+    const agents = query('SELECT id, name, online, current_status, last_seen FROM agents');
+    const agentHealth = {};
+    for (const a of agents) {
+      const lastSeen = a.last_seen || 0;
+      const healthy = (Date.now() - lastSeen) < HEARTBEAT_TIMEOUT;
+      agentHealth[a.id] = {
+        name: a.name,
+        online: !!a.online,
+        status: a.current_status,
+        last_seen: lastSeen,
+        healthy,
+      };
+    }
     res.json({
       status: 'ok',
       uptime: Math.floor((Date.now() - startTime) / 1000),
       wsClients: wss.clients.size,
       db: 'connected',
+      agents: agentHealth,
     });
   });
 

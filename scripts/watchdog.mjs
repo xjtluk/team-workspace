@@ -205,6 +205,49 @@ async function httpHealthCheck() {
 }
 setInterval(httpHealthCheck, 30000);
 
+// ── Agent 心跳健康检查（每 60 秒）──
+const agentUnhealthyCount = new Map(); // agentId → 连续 unhealthy 次数
+const AGENT_UNHEALTHY_THRESHOLD = 2;   // 连续 2 次 unhealthy 触发重启
+
+async function agentHealthCheck() {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    const res = await fetch(HEALTH_URL, { signal: controller.signal });
+    clearTimeout(timeout);
+
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data.agents) return;
+
+    for (const [agentId, info] of Object.entries(data.agents)) {
+      // 只监控 cc 和 cx
+      if (agentId !== 'cc' && agentId !== 'cx') continue;
+
+      if (!info.healthy) {
+        const count = (agentUnhealthyCount.get(agentId) || 0) + 1;
+        agentUnhealthyCount.set(agentId, count);
+        log('WARN', agentId, `Agent 无心跳 (${count}/${AGENT_UNHEALTHY_THRESHOLD})`);
+
+        if (count >= AGENT_UNHEALTHY_THRESHOLD) {
+          log('ERROR', agentId, `连续 ${count} 次无心跳，触发重启`);
+          const state = processes.get(`${agentId}-listener`);
+          if (state && !state.proc.killed && state.proc.exitCode === null) {
+            state.proc.kill('SIGTERM');
+          }
+          agentUnhealthyCount.set(agentId, 0);
+        }
+      } else {
+        if (agentUnhealthyCount.has(agentId)) {
+          log('INFO', agentId, '心跳恢复正常');
+          agentUnhealthyCount.delete(agentId);
+        }
+      }
+    }
+  } catch {}
+}
+setInterval(agentHealthCheck, 60000);
+
 // 每日数据库备份（每 24 小时）
 let lastBackupDate = '';
 function dailyBackup() {
