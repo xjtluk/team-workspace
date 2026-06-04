@@ -633,7 +633,7 @@ function cleanToolCallTags(text) {
   if (!text) return '';
   return text
     .replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
-    .replace/<think>[\s\S]*?<\/think>/g, '')
+    .replace(/<think>[\s\S]*?<\/think>/g, '')
     // DSML 格式：兼容单竖线 ｜ 和双竖线 ｜｜
     .replace(/<｜+DSML｜+tool_calls>[\s\S]*?<\/｜+DSML｜+tool_calls>/g, '')
     .replace(/<\/｜+DSML｜+[^>]*>?/g, '')
