@@ -323,6 +323,19 @@ async function callOpenAI(systemPrompt, messages, useTools, config) {
     }
   }
 
+  // DSML 格式兼容（智谱/某些模型输出 <｜DSML｜tool_calls> 格式）
+  if (textContent && textContent.includes('DSML')) {
+    const dsmlCalls = parseDsmlToolCalls(textContent);
+    if (dsmlCalls.length > 0) {
+      console.log(`[AI] 从响应文本中解析到 ${dsmlCalls.length} 个 DSML 工具调用`);
+      return {
+        type: 'tool_calls',
+        toolCalls: dsmlCalls,
+        text: textContent,
+      };
+    }
+  }
+
   return { type: 'text', text: textContent };
 }
 
@@ -383,6 +396,43 @@ function parseXmlToolCalls(text) {
     }
   }
   return calls;
+}
+
+// 解析 DSML 格式工具调用（智谱/某些模型输出格式）
+// 格式: <｜DSML｜tool_calls><｜DSML｜invoke name="bash"><｜DSML｜parameter name="command" string="true">...</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>
+function parseDsmlToolCalls(text) {
+  const calls = [];
+  let callId = 0;
+
+  // 匹配所有 <｜DSML｜invoke name="xxx"> ... </｜DSML｜invoke> 块
+  const invokePattern = /<｜DSML｜invoke\s+name="([^"]+)"[^>]*>([\s\S]*?)<\/｜DSML｜invoke>/g;
+  let match;
+
+  while ((match = invokePattern.exec(text)) !== null) {
+    const funcName = match[1];
+    const innerBlock = match[2];
+    const params = {};
+
+    // 匹配所有 <｜DSML｜parameter name="xxx" ...>value</｜DSML｜parameter>
+    const paramPattern = /<｜DSML｜parameter\s+name="([^"]+)"[^>]*>([\s\S]*?)<\/｜DSML｜parameter>/g;
+    let paramMatch;
+
+    while ((paramMatch = paramPattern.exec(innerBlock)) !== null) {
+      const key = paramMatch[1];
+      const value = paramMatch[2].trim();
+      // string="true" 表示值是字符串，否则尝试 JSON 解析
+      const isString = paramMatch[0].includes('string="true"');
+      params[key] = isString ? value : tryParseJson(value);
+    }
+
+    calls.push({ id: 'dsml_' + callId++, name: funcName, input: params });
+  }
+
+  return calls;
+}
+
+function tryParseJson(str) {
+  try { return JSON.parse(str); } catch { return str; }
 }
 
 // 修复截断的 UTF-8 文本
