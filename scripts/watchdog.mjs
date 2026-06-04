@@ -194,10 +194,16 @@ async function httpHealthCheck() {
     log('WARN', 'watchdog', `健康检查异常: ${err.message} (连续第 ${healthFailCount} 次)`);
 
     if (healthFailCount >= HEALTH_FAIL_THRESHOLD) {
-      log('ERROR', 'watchdog', `连续 ${healthFailCount} 次健康检查失败，重启 workspace-server`);
-      const state = processes.get('workspace-server');
-      if (state && !state.proc.killed) {
-        state.proc.kill('SIGTERM');
+      log('ERROR', 'watchdog', `连续 ${healthFailCount} 次健康检查失败，通过PM2重启 workspace-server`);
+      try {
+        execSync('npx pm2 restart workspace-server', {
+          cwd: PROJECT_DIR,
+          windowsHide: true,
+          timeout: 15000,
+        });
+        log('INFO', 'watchdog', 'workspace-server 重启成功');
+      } catch (err) {
+        log('ERROR', 'watchdog', `workspace-server 重启失败: ${err.message}`);
       }
       healthFailCount = 0;
     }
@@ -208,6 +214,12 @@ setInterval(httpHealthCheck, 30000);
 // ── Agent 心跳健康检查（每 60 秒）──
 const agentUnhealthyCount = new Map(); // agentId → 连续 unhealthy 次数
 const AGENT_UNHEALTHY_THRESHOLD = 2;   // 连续 2 次 unhealthy 触发重启
+
+// agentId → PM2 服务名映射
+const AGENT_PM2_MAP = {
+  cc: 'cc-listener',
+  cx: 'cx-listener',
+};
 
 async function agentHealthCheck() {
   try {
@@ -221,8 +233,8 @@ async function agentHealthCheck() {
     if (!data.agents) return;
 
     for (const [agentId, info] of Object.entries(data.agents)) {
-      // 只监控 cc 和 cx
-      if (agentId !== 'cc' && agentId !== 'cx') continue;
+      // 只监控有 PM2 服务的 agent（跳过人类和已停用的）
+      if (!AGENT_PM2_MAP[agentId]) continue;
 
       if (!info.healthy) {
         const count = (agentUnhealthyCount.get(agentId) || 0) + 1;
@@ -230,10 +242,17 @@ async function agentHealthCheck() {
         log('WARN', agentId, `Agent 无心跳 (${count}/${AGENT_UNHEALTHY_THRESHOLD})`);
 
         if (count >= AGENT_UNHEALTHY_THRESHOLD) {
-          log('ERROR', agentId, `连续 ${count} 次无心跳，触发重启`);
-          const state = processes.get(`${agentId}-listener`);
-          if (state && !state.proc.killed && state.proc.exitCode === null) {
-            state.proc.kill('SIGTERM');
+          const pm2Name = AGENT_PM2_MAP[agentId];
+          log('ERROR', agentId, `连续 ${count} 次无心跳，通过PM2重启 ${pm2Name}`);
+          try {
+            execSync(`npx pm2 restart ${pm2Name}`, {
+              cwd: PROJECT_DIR,
+              windowsHide: true,
+              timeout: 15000,
+            });
+            log('INFO', agentId, `${pm2Name} 重启成功`);
+          } catch (err) {
+            log('ERROR', agentId, `${pm2Name} 重启失败: ${err.message}`);
           }
           agentUnhealthyCount.set(agentId, 0);
         }
