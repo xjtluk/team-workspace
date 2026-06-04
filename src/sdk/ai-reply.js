@@ -7,6 +7,8 @@ import { readFileSync, writeFileSync, readdirSync, existsSync, statSync } from '
 import { join, resolve, relative, isAbsolute } from 'path';
 
 // ── Windows UTF-8 编码环境变量 ──
+// 核心修复：execSync 前缀 chcp 65001 切换 Windows 代码页到 UTF-8
+// LANG/LC_ALL/PYTHONIOENCODING：Unix/Python 子进程兼容保险，Windows 下无效但无害
 const UTF8_ENV = {
   ...process.env,
   LANG: 'en_US.UTF-8',

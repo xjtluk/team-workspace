@@ -386,6 +386,15 @@ async function handleMessage(raw) {
       }
     }
 
+    // P0修复：所有 provider 都在冷却中时，aiReply 为 undefined
+    if (!aiReply) {
+      const cooldownList = fallbackChain.map(f => f.name).filter(n => isProviderOnCooldown(n));
+      if (cooldownList.length === fallbackChain.length) {
+        aiReply = `@CC [问题] 所有 API 提供商均在冷却中（${cooldownList.join('、')}），约5分钟后自动恢复。`;
+        console.log(`[CX] 所有 provider 冷却中: ${cooldownList.join(', ')}`);
+      }
+    }
+
     if (isCodeTask) {
       console.log(`[CX] 代码任务完成`);
     }
