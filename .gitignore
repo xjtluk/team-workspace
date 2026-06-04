@@ -20,3 +20,6 @@ data/
 .DS_Store
 Thumbs.db
 desktop.ini
+# 运行时缓存
+.cache/
+*.pid

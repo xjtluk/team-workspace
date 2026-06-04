@@ -233,6 +233,8 @@ K（结果有效）：✅ 成果文件可正常读取，可直接用于下一环
 // ── Agent 注册 ──
 const cc = createAgent({ id: 'cc', name: 'CC', color: '#4A90D9' });
 await cc.connect();
+// 启动时清除上次崩溃残留的状态
+await cc.idle().catch(() => {});
 console.log('[CC] Agent 注册完成');
 
 // ── 加载历史 ──
@@ -628,12 +630,24 @@ async function handleMessage(raw) {
   }
 }
 
-process.on('SIGINT', async () => {
+const cleanup = async () => {
+  try { await cc.idle(); } catch {}
   await cc.disconnect();
   if (reconnectTimer) clearTimeout(reconnectTimer);
   if (ws) try { ws.close(); } catch {}
   cleanupPidFile();
   process.exit(0);
+};
+
+process.on('SIGINT', cleanup);
+process.on('SIGTERM', cleanup);
+process.on('uncaughtException', async (err) => {
+  console.error('[CC] uncaughtException:', err);
+  await cleanup();
+});
+process.on('unhandledRejection', async (err) => {
+  console.error('[CC] unhandledRejection:', err);
+  await cleanup();
 });
 
 process.on('exit', cleanupPidFile);

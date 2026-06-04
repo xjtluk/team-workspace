@@ -504,21 +504,32 @@ setInterval(() => {
 async function main() {
   // 注册 Agent
   await cx.connect();
+  // 启动时清除上次崩溃残留的状态
+  await cx.idle().catch(() => {});
   console.log('[CX] 已注册到 Workspace Server');
 
   // 连接 WebSocket
   await connectWebSocket();
 
-  // 优雅退出
+  // 优雅退出：重置状态 + 标记离线
   const cleanup = async () => {
     console.log('[CX] 正在断开连接...');
     try { unlinkSync(PID_FILE); } catch {}
+    try { await cx.idle(); } catch {}
     await cx.disconnect();
     process.exit(0);
   };
 
   process.on('SIGINT', cleanup);
   process.on('SIGTERM', cleanup);
+  process.on('uncaughtException', async (err) => {
+    console.error('[CX] uncaughtException:', err);
+    await cleanup();
+  });
+  process.on('unhandledRejection', async (err) => {
+    console.error('[CX] unhandledRejection:', err);
+    await cleanup();
+  });
 
   console.log('[CX] 监听启动，等待任务...');
 }
