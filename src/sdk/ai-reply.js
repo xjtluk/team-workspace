@@ -219,7 +219,10 @@ async function callOpenAI(systemPrompt, messages, useTools, config) {
     }));
   }
 
-  const response = await fetchWithTimeout(`${config.openaiBaseUrl}/chat/completions`, {
+  const requestUrl = `${config.openaiBaseUrl}/chat/completions`;
+  console.log('[AI] → POST', requestUrl, '| model:', config.openaiModel);
+
+  const response = await fetchWithTimeout(requestUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -234,6 +237,10 @@ async function callOpenAI(systemPrompt, messages, useTools, config) {
   }
 
   const data = await response.json();
+  // 记录 API 实际返回的模型名（验证提供商是否使用了请求的模型）
+  if (data.model) {
+    console.log('[AI] ← response.model:', data.model);
+  }
   const choice = data.choices?.[0];
   if (!choice) return '';
 
@@ -356,7 +363,10 @@ async function callAnthropic(systemPrompt, messages, useTools, config) {
     body.tools = TOOLS;
   }
 
-  const response = await fetchWithTimeout(`${config.anthropicBaseUrl}/v1/messages`, {
+  const requestUrl = `${config.anthropicBaseUrl}/v1/messages`;
+  console.log('[AI] → POST', requestUrl, '| model:', config.anthropicModel);
+
+  const response = await fetchWithTimeout(requestUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -386,6 +396,11 @@ async function callAnthropic(systemPrompt, messages, useTools, config) {
     // JSON 解析失败，可能是响应被截断
     console.error('[AI] JSON 解析失败，响应可能被截断:', parseErr.message);
     throw new Error(`API 响应解析失败: ${parseErr.message}`);
+  }
+
+  // 记录 API 实际返回的模型名
+  if (data.model) {
+    console.log('[AI] ← response.model:', data.model);
   }
 
   const content = data.content || [];
