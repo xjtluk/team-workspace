@@ -9,12 +9,18 @@ import { join, resolve, relative, isAbsolute } from 'path';
 // ── Windows UTF-8 编码环境变量 ──
 // 核心修复：execSync 前缀 chcp 65001 切换 Windows 代码页到 UTF-8
 // LANG/LC_ALL/PYTHONIOENCODING：Unix/Python 子进程兼容保险，Windows 下无效但无害
+// http_proxy/https_proxy：让 curl/Node.js 流量经过 Clash 规则模式，国内直连国外走代理
+// 注意：不要修改系统代理设置（注册表 ProxyEnable/ProxyServer），只在进程内设置
 const UTF8_ENV = {
   ...process.env,
   LANG: 'en_US.UTF-8',
   LC_ALL: 'en_US.UTF-8',
   PYTHONIOENCODING: 'utf-8',
   GIT_TERMINAL_PROMPT: '0',
+  http_proxy: 'http://127.0.0.1:7897',
+  https_proxy: 'http://127.0.0.1:7897',
+  HTTP_PROXY: 'http://127.0.0.1:7897',
+  HTTPS_PROXY: 'http://127.0.0.1:7897',
 };
 
 // 懒加载配置 — 在函数调用时读取环境变量，而不是模块加载时
