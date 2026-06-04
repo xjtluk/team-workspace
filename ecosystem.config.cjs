@@ -39,25 +39,12 @@ module.exports = {
       out_file: './logs/cc-listener-out.log',
       merge_logs: true
     },
-    {
-      name: 'xiaoma-listener',
-      script: 'start-xiaoma.mjs',
-      cwd: 'D:/BKS/projects/team-workspace',
-      instances: 1,
-      autorestart: true,
-      max_restarts: 10,
-      restart_delay: 10000,
-      watch: false,
-      max_memory_restart: '200M',
-      kill_timeout: 5000,
-      env: {
-        NODE_ENV: 'production'
-      },
-      log_date_format: 'YYYY-MM-DD HH:mm:ss',
-      error_file: './logs/xiaoma-listener-error.log',
-      out_file: './logs/xiaoma-listener-out.log',
-      merge_logs: true
-    },
+    // xiaoma-listener 已停用 — 小马AI不再需要，只保留真实小马(Marvis)
+    // {
+    //   name: 'xiaoma-listener',
+    //   script: 'start-xiaoma.mjs',
+    //   ...
+    // },
     {
       name: 'cx-listener',
       script: 'start-cx.mjs',

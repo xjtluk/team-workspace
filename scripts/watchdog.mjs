@@ -39,14 +39,12 @@ const SERVICES = [
     maxRestarts: 20,
     enabled: true,
   },
-  {
-    name: 'xiaoma-listener',
-    script: 'start-xiaoma.mjs',
-    args: [],
-    env: { NODE_ENV: 'production' },
-    maxRestarts: 20,
-    enabled: true,
-  },
+  // xiaoma-listener 已停用 — 小马AI不再需要，只保留真实小马(Marvis)
+  // {
+  //   name: 'xiaoma-listener',
+  //   script: 'start-xiaoma.mjs',
+  //   ...
+  // },
   {
     name: 'cx-listener',
     script: 'start-cx.mjs',
