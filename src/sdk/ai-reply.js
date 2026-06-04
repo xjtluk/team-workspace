@@ -40,6 +40,12 @@ const BLOCKED_BASH_PATTERNS = [
   /\b(eval|exec)\s*\(/,           // eval/exec 调用
 ];
 
+// 允许写入的额外目录（团队协作需要跨项目写文件）
+const ALLOWED_DIRS = [
+  'D:/BKS/team',
+  'D:/BKS/projects',
+];
+
 function validatePath(filePath, projectDir) {
   if (!filePath || typeof filePath !== 'string') {
     return { ok: false, error: '路径为空或无效' };
@@ -49,11 +55,23 @@ function validatePath(filePath, projectDir) {
   }
   const baseDir = resolve(projectDir);
   const targetPath = isAbsolute(filePath) ? resolve(filePath) : resolve(baseDir, filePath);
+
+  // 检查是否在项目目录内
   const rel = relative(baseDir, targetPath);
-  if (rel.startsWith('..') || isAbsolute(rel)) {
-    return { ok: false, error: `路径越界: ${filePath} 不在项目目录内` };
+  if (!rel.startsWith('..') && !isAbsolute(rel)) {
+    return { ok: true, resolved: targetPath };
   }
-  return { ok: true, resolved: targetPath };
+
+  // 检查是否在白名单目录内
+  for (const allowedDir of ALLOWED_DIRS) {
+    const allowedResolved = resolve(allowedDir);
+    const relToAllowed = relative(allowedResolved, targetPath);
+    if (!relToAllowed.startsWith('..') && !isAbsolute(relToAllowed)) {
+      return { ok: true, resolved: targetPath };
+    }
+  }
+
+  return { ok: false, error: `路径越界: ${filePath} 不在允许的目录内` };
 }
 
 function validateBashCommand(command) {

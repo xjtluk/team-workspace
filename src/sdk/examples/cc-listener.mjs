@@ -394,10 +394,13 @@ let isProcessing = false;
 let processingStartTime = 0;
 const pendingMessages = [];
 
-// 看门狗：isProcessing 卡死超过 3 分钟强制重置
+// 看门狗：isProcessing 卡死超过任务超时+30秒强制重置
+// 必须大于 ai-reply.js 的 TASK_TIMEOUT（默认300s），否则会误杀正常任务
+const WATCHDOG_TIMEOUT = parseInt(process.env.AI_TASK_TIMEOUT) || 300000;
+const WATCHDOG_GRACE = 30000; // 额外30秒缓冲
 setInterval(() => {
-  if (isProcessing && Date.now() - processingStartTime > 180000) {
-    console.error('[CC] 消息处理卡死超过 3 分钟，强制重置 isProcessing');
+  if (isProcessing && Date.now() - processingStartTime > WATCHDOG_TIMEOUT + WATCHDOG_GRACE) {
+    console.error(`[CC] 消息处理卡死超过 ${Math.round((WATCHDOG_TIMEOUT + WATCHDOG_GRACE)/1000)}秒，强制重置 isProcessing`);
     isProcessing = false;
     if (pendingMessages.length > 0) {
       const nextMsg = pendingMessages.shift();
