@@ -6,6 +6,15 @@ import { execSync } from 'child_process';
 import { readFileSync, writeFileSync, readdirSync, existsSync, statSync } from 'fs';
 import { join, resolve, relative, isAbsolute } from 'path';
 
+// ── Windows UTF-8 编码环境变量 ──
+const UTF8_ENV = {
+  ...process.env,
+  LANG: 'en_US.UTF-8',
+  LC_ALL: 'en_US.UTF-8',
+  PYTHONIOENCODING: 'utf-8',
+  GIT_TERMINAL_PROMPT: '0',
+};
+
 // 懒加载配置 — 在函数调用时读取环境变量，而不是模块加载时
 function getConfig() {
   const backend = process.env.AI_BACKEND || 'anthropic';
@@ -103,7 +112,7 @@ function validateBashCommand(command) {
 }
 
 // ── 超时与重试工具 ──
-const FETCH_TIMEOUT = 60000; // 60 秒超时（长上下文需要更多时间）
+const FETCH_TIMEOUT = parseInt(process.env.CX_FETCH_TIMEOUT) || 60000; // 优先读 CX_FETCH_TIMEOUT，默认 60s
 const MAX_RETRIES = 3;
 const RETRY_ENABLED = process.env.AI_RETRY !== 'false'; // 重试开关，默认开启
 
@@ -477,11 +486,16 @@ function executeTool(name, input) {
       case 'bash': {
         const check = validateBashCommand(input.command);
         if (!check.ok) return `安全拒绝: ${check.error}`;
-        const result = execSync(input.command, {
+        // Windows: 强制 UTF-8 代码页，防止中文乱码
+        const isWin = process.platform === 'win32';
+        const cmd = isWin ? `chcp 65001 >nul 2>&1 && ${input.command}` : input.command;
+        const result = execSync(cmd, {
           cwd: projectDir,
           encoding: 'utf8',
           timeout: 30000,
           windowsHide: true,
+          env: UTF8_ENV,
+          shell: true,
         });
         return result.substring(0, 3000);
       }
@@ -489,8 +503,8 @@ function executeTool(name, input) {
         const check = validatePath(input.path, projectDir);
         if (!check.ok) return `安全拒绝: ${check.error}`;
         const content = readFileSync(check.resolved, 'utf8');
-        if (content.length > 5000) {
-          return content.substring(0, 5000) + `\n\n[TRUNCATED: showing first 5000 of ${content.length} chars]`;
+        if (content.length > 50000) {
+          return content.substring(0, 50000) + `\n\n[TRUNCATED: showing first 50000 of ${content.length} chars]`;
         }
         return content;
       }
@@ -515,10 +529,15 @@ function executeTool(name, input) {
         if (!check.ok) return `安全拒绝: ${check.error}`;
         // 转义 pattern 中的特殊字符防止命令注入
         const safePattern = (input.pattern || '').replace(/["`$\\]/g, '');
-        const result = execSync(`grep -r "${safePattern}" "${check.resolved}" --include="*.js" --include="*.jsx" --include="*.md" --include="*.json" --include="*.css" -l 2>/dev/null || echo "无匹配"`, {
+        const isWin = process.platform === 'win32';
+        const grepCmd = `grep -r "${safePattern}" "${check.resolved}" --include="*.js" --include="*.jsx" --include="*.md" --include="*.json" --include="*.css" -l 2>/dev/null || echo "无匹配"`;
+        const cmd = isWin ? `chcp 65001 >nul 2>&1 && ${grepCmd}` : grepCmd;
+        const result = execSync(cmd, {
           encoding: 'utf8',
           timeout: 10000,
           windowsHide: true,
+          env: UTF8_ENV,
+          shell: true,
         });
         return result.substring(0, 1000);
       }
@@ -537,11 +556,13 @@ function executeTool(name, input) {
  * @param {string} userMessage - 用户消息
  * @param {boolean} useTools - 是否启用工具（默认 true）
  * @param {object} modelOverride - 可选的模型配置覆盖 { backend, openaiBaseUrl, openaiApiKey, openaiModel }
+ * @param {number} maxToolRounds - 可选的工具调用轮次限制（默认12）
+ * @param {function} onToolCall - 可选的工具执行回调 (toolName, toolInput, roundIndex) => void
  */
-export async function generateReply(systemPrompt, history, userMessage, useTools = true, modelOverride) {
+export async function generateReply(systemPrompt, history, userMessage, useTools = true, modelOverride, maxToolRounds, onToolCall) {
   // 整体超时保护（默认300秒，可通过.env AI_TASK_TIMEOUT配置）
   const TASK_TIMEOUT = parseInt(process.env.AI_TASK_TIMEOUT) || 300000;
-  const taskPromise = _generateReply(systemPrompt, history, userMessage, useTools, modelOverride);
+  const taskPromise = _generateReply(systemPrompt, history, userMessage, useTools, modelOverride, maxToolRounds, onToolCall);
   const timeoutPromise = new Promise((_, reject) =>
     setTimeout(() => reject(new Error(`任务超时 (${TASK_TIMEOUT/1000}s)`)), TASK_TIMEOUT)
   );
@@ -562,7 +583,7 @@ function cleanToolCallTags(text) {
 }
 
 
-async function _generateReply(systemPrompt, history, userMessage, useTools, modelOverride) {
+async function _generateReply(systemPrompt, history, userMessage, useTools, modelOverride, maxToolRounds, onToolCall) {
   const baseConfig = getConfig();
   // 如果传入 modelOverride，合并覆盖模型相关配置
   const config = modelOverride
@@ -592,8 +613,8 @@ async function _generateReply(systemPrompt, history, userMessage, useTools, mode
     return cleanToolCallTags(result.text);
   }
 
-  // 工具调用循环（最多 5 轮）
-  const maxIterations = 12;
+  // 工具调用循环（默认12轮，可通过 maxToolRounds 参数覆盖）
+  const maxIterations = maxToolRounds || parseInt(process.env.MAX_TOOL_ROUNDS) || 12;
   for (let i = 0; i < maxIterations; i++) {
     const result = await callWithRetry(() => callAPI(systemPrompt, messages, true));
 
@@ -633,6 +654,10 @@ async function _generateReply(systemPrompt, history, userMessage, useTools, mode
       const toolResults = [];
       for (const tc of result.toolCalls) {
         console.log(`[工具] ${tc.name}(${JSON.stringify(tc.input).substring(0, 80)})`);
+        // 实时回调：通知调用方当前正在执行的工具
+        if (onToolCall) {
+          try { onToolCall(tc.name, tc.input, i); } catch {}
+        }
         const toolResult = executeTool(tc.name, tc.input);
         console.log(`[结果] ${toolResult.substring(0, 100)}`);
 
@@ -661,7 +686,7 @@ async function _generateReply(systemPrompt, history, userMessage, useTools, mode
   }
 
   // 工具调用轮次已达上限，让 AI 基于已收集的信息生成回复
-  console.log(`[AI] 工具调用轮次已达上限 (5次)，基于已收集信息生成回复`);
+  console.log(`[AI] 工具调用轮次已达上限 (${maxIterations}次)，基于已收集信息生成回复`);
   const finalResult = await callWithRetry(() => callAPI(systemPrompt, messages, false));
   return cleanToolCallTags(finalResult.text);
 }

@@ -93,28 +93,27 @@ const cx = createAgent({
   gridFile: 'grids/cx.js',
 });
 
-// ── 进度动画 ──
-const PROGRESS_STEPS = [
-  { activity: '正在分析任务...', progress: 30 },
-  { activity: '正在编写代码...', progress: 50 },
-  { activity: '正在测试...', progress: 70 },
-  { activity: '即将完成...', progress: 85 },
-];
+// ── 工具执行进度回调 ──
+const TOOL_LABELS = {
+  bash: '执行命令',
+  read_file: '读取文件',
+  write_file: '写入文件',
+  list_files: '浏览目录',
+  search_code: '搜索代码',
+};
 
-async function withProgress(agent, startActivity, startProgress, asyncFn) {
-  await agent.work(startActivity, startProgress);
-  let step = 0;
-  const timer = setInterval(async () => {
-    if (step < PROGRESS_STEPS.length) {
-      const s = PROGRESS_STEPS[step++];
-      try { await agent.work(s.activity, s.progress); } catch {}
-    }
-  }, 12000);
-  try {
-    return await asyncFn();
-  } finally {
-    clearInterval(timer);
-  }
+function createToolProgressCallback(agent) {
+  let toolRound = 0;
+  return async (toolName, toolInput, roundIndex) => {
+    toolRound++;
+    const label = TOOL_LABELS[toolName] || toolName;
+    const detail = toolInput?.command || toolInput?.path || toolInput?.pattern || '';
+    const shortDetail = typeof detail === 'string' ? detail.substring(0, 40) : '';
+    const progress = Math.min(30 + toolRound * 5, 90);
+    try {
+      await agent.work(`${label}: ${shortDetail}`, progress);
+    } catch {}
+  };
 }
 
 // ── 消息协议解析 ──
@@ -134,6 +133,13 @@ const MODEL_TIERS = {
     openaiBaseUrl: 'https://open.bigmodel.cn/api/paas/v4',
     openaiApiKey: process.env.ZHIPU_API_KEY_XIAOMA || process.env.ZHIPU_API_KEY_CX,
   },
+  // 日常首选: TaoToken DeepSeek V4 Flash
+  taotokenFlash: {
+    backend: 'openai',
+    openaiModel: 'deepseek-v4-flash',
+    openaiBaseUrl: 'https://taotoken.net/api/v1',
+    openaiApiKey: process.env.TAOTOKEN_API_KEY,
+  },
   // 代码: DeepSeek V4 Pro（强推理，@CX [代码] 触发）
   code: {
     backend: 'openai',
@@ -149,6 +155,20 @@ const MODEL_TIERS = {
     openaiApiKey: process.env.ZHIPU_API_KEY_XIAOMA || process.env.ZHIPU_API_KEY_CX,
   },
 };
+
+// ── Provider 冷却机制（429后5分钟跳过同一provider） ──
+const providerCooldown = new Map();
+const PROVIDER_COOLDOWN_MS = 5 * 60 * 1000; // 5分钟冷却
+
+function isProviderOnCooldown(name) {
+  const until = providerCooldown.get(name);
+  return until && Date.now() < until;
+}
+
+function markProviderCooldown(name) {
+  providerCooldown.set(name, Date.now() + PROVIDER_COOLDOWN_MS);
+  console.log(`[CX] ${name} 触发冷却，5分钟后恢复`);
+}
 
 // ── 系统提示词 ──
 const SYSTEM_PROMPT = `你是 CX（Codex），BKS 研发部的代码工程师。
@@ -274,14 +294,18 @@ async function handleMessage(raw) {
   console.log(`[CX] 收到消息: ${content.substring(0, 80)}`);
 
   try {
-    // 模型选择：[代码] → DeepSeek V4 Pro，默认 → GLM-4.7-Flash
+    // 模型选择：[代码] → DeepSeek V4 Pro，[日常] → TaoToken Flash
     const isCodeTask = MSG_PROTOCOL.CODE_TASK.test(content);
-    let modelOverride = isCodeTask ? { ...MODEL_TIERS.code } : { ...MODEL_TIERS.normal };
+    let modelOverride = isCodeTask ? { ...MODEL_TIERS.code } : { ...MODEL_TIERS.taotokenFlash };
     if (isCodeTask) {
       console.log(`[CX] 代码任务，使用: ${modelOverride.openaiModel}`);
     } else {
       console.log(`[CX] 日常任务，使用: ${modelOverride.openaiModel}`);
     }
+
+    // 按任务类型设置超时：日常30s，代码120s
+    process.env.CX_FETCH_TIMEOUT = isCodeTask ? '120000' : '30000';
+    console.log(`[CX] 超时设置: ${process.env.CX_FETCH_TIMEOUT}ms (${isCodeTask ? '代码' : '日常'}任务)`);
 
     // 加载聊天历史
     const chatHistory = (await loadChatHistory(20)) || [];
@@ -309,19 +333,56 @@ async function handleMessage(raw) {
     // 生成回复（启用工具调用，CX 需要 bash/read_file/write_file 等工具执行任务）
     // modelOverride 直接传入，无需修改/恢复 process.env
     let aiReply;
-    try {
-      aiReply = await withProgress(cx, '正在分析任务...', 30,
-        () => generateReply(SYSTEM_PROMPT, chatHistory, prompt, true, modelOverride));
-    } catch (err) {
-      // 代码任务超时时，降级到 GLM-4.7 重试
-      if (isCodeTask && /timeout|超时/i.test(err.message)) {
-        console.log(`[CX] DeepSeek 超时，降级到 GLM-4.7 重试`);
-        modelOverride = { ...MODEL_TIERS.fallback };
-        processingStartTime = Date.now(); // 刷新看门狗计时，防止降级重试被误杀
-        aiReply = await withProgress(cx, '降级重试中...', 50,
-          () => generateReply(SYSTEM_PROMPT, chatHistory, prompt, true, modelOverride));
-      } else {
-        throw err;
+    // 工具轮次：日常20次，代码50次（防无限循环靠 TASK_TIMEOUT 300s 兜底）
+    const toolRounds = isCodeTask ? 50 : 20;
+    console.log(`[CX] 工具轮次: ${toolRounds}次 (${isCodeTask ? '代码' : '日常'}任务)`);
+
+    // 实时进度回调：每次工具执行时更新 agent 状态
+    const onToolCall = createToolProgressCallback(cx);
+
+    // 降级链：代码任务 SiliconFlow → TaoToken Flash → GLM-4.7
+    const fallbackChain = isCodeTask
+      ? [
+          { name: 'SiliconFlow DS4', tier: MODEL_TIERS.code },
+          { name: 'TaoToken Flash', tier: MODEL_TIERS.taotokenFlash },
+          { name: '智谱 GLM-4.7', tier: MODEL_TIERS.fallback },
+        ]
+      : [
+          { name: 'TaoToken Flash', tier: MODEL_TIERS.taotokenFlash },
+          { name: '智谱 Flash', tier: MODEL_TIERS.normal },
+        ];
+
+    let lastErr;
+    for (let i = 0; i < fallbackChain.length; i++) {
+      const { name, tier } = fallbackChain[i];
+
+      // 跳过冷却中的 provider
+      if (isProviderOnCooldown(name)) {
+        console.log(`[CX] 跳过 ${name}（冷却中）`);
+        continue;
+      }
+
+      modelOverride = { ...tier };
+      try {
+        console.log(`[CX] 尝试 ${name} (${modelOverride.openaiModel})`);
+        await cx.work(`启动: ${name}...`, 20);
+        aiReply = await generateReply(SYSTEM_PROMPT, chatHistory, prompt, true, modelOverride, toolRounds, onToolCall);
+        console.log(`[CX] ${name} 成功`);
+        break; // 成功，跳出降级链
+      } catch (err) {
+        lastErr = err;
+        console.log(`[CX] ${name} 失败: ${err.message.substring(0, 100)}`);
+        // 429 错误触发冷却
+        if (/429|rate.?limit/i.test(err.message)) {
+          markProviderCooldown(name);
+        }
+        if (i < fallbackChain.length - 1) {
+          processingStartTime = Date.now(); // 刷新看门狗
+          continue; // 尝试下一个
+        }
+        // 所有降级都失败，上报 CC
+        console.log(`[CX] 所有模型降级失败: ${lastErr.message}`);
+        aiReply = `@CC [问题] 所有模型降级失败: ${lastErr.message}，请指示。`;
       }
     }
 
