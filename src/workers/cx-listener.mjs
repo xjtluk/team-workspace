@@ -95,7 +95,7 @@ const cx = createAgent({
   name: 'CX',
   color: '#10A37F',
   gridFile: 'grids/cx.js',
-  getModel: () => currentModel,
+  getModel: () => displayModel,
 });
 
 // ── 工具执行进度回调 ──
@@ -183,8 +183,9 @@ const MODEL_TIERS = {
   },
 };
 
-// ── 当前模型跟踪（用于心跳上报）──
-let currentModel = "glm-4.7-flash";
+// ── 当前模型跟踪 ──
+let currentModel = "glm-4.7-flash";      // 路由用，降级时会变
+let displayModel = "glm-4.7-flash";      // 展示用，只在任务开始时设置
 let currentTaskName = '';  // 任务级状态显示
 
 // ── Provider 冷却机制（429后5分钟跳过同一provider） ──
@@ -429,6 +430,7 @@ async function handleMessage(raw) {
     const routeResult = route(content, contextSize);
     let modelOverride = routeResult.modelOverride || { ...MODEL_TIERS.volcFlash };
     currentModel = modelOverride.openaiModel;
+    displayModel = modelOverride.openaiModel;  // 展示用，降级时不更新
     console.log(`[CX] 任务分类: ${routeResult.taskType}, 选中: ${routeResult.providerName}, 上下文: ${contextSize}字符`);
 
     // 生成回复（启用工具调用，CX 需要 bash/read_file/write_file 等工具执行任务）
