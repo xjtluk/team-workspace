@@ -11,6 +11,9 @@ import { join, resolve, relative, isAbsolute } from 'path';
 // LANG/LC_ALL/PYTHONIOENCODING：Unix/Python 子进程兼容保险，Windows 下无效但无害
 // http_proxy/https_proxy：让 curl/Node.js 流量经过 Clash 规则模式，国内直连国外走代理
 // 注意：不要修改系统代理设置（注册表 ProxyEnable/ProxyServer），只在进程内设置
+// 国内 API 域名（直连，不走代理）
+const DOMAINS_NO_PROXY = 'siliconflow.cn,bigmodel.cn,taotoken.net,volces.com,xiaomimimo.com,127.0.0.1,localhost';
+
 const UTF8_ENV = {
   ...process.env,
   LANG: 'en_US.UTF-8',
@@ -21,6 +24,8 @@ const UTF8_ENV = {
   https_proxy: 'http://127.0.0.1:7897',
   HTTP_PROXY: 'http://127.0.0.1:7897',
   HTTPS_PROXY: 'http://127.0.0.1:7897',
+  no_proxy: DOMAINS_NO_PROXY,
+  NO_PROXY: DOMAINS_NO_PROXY,
 };
 
 // 懒加载配置 — 在函数调用时读取环境变量，而不是模块加载时
