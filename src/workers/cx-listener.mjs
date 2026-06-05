@@ -14,7 +14,9 @@ import { generateReply } from '../sdk/ai-reply.js';
 import { loadTeamMemory, loadChatHistory } from '../sdk/memory.js';
 import { setCache, getCache } from '../sdk/cache.js';
 import { getFullMemory } from '../sdk/shared-memory.js';
-import { writeFileSync, existsSync, readFileSync, unlinkSync } from 'fs';
+import { route, getRouteChain, classifyTask } from '../sdk/model-router.js';
+import { report as reportHealth } from '../sdk/provider-health.js';
+import { writeFileSync, existsSync, readFileSync, unlinkSync, appendFileSync } from 'fs';
 import { join } from 'path';
 import WebSocket from 'ws';
 
@@ -54,6 +56,8 @@ function checkSingleInstance() {
 }
 
 checkSingleInstance();
+// ── 执行日志 ──
+const CX_LOG = join(process.cwd(), 'logs', 'cx-execution.log');
 
 // ── 项目路径 ──
 const PROJECT_DIR = process.env.PROJECT_DIR || 'D:/BKS/projects/team-workspace';
@@ -63,7 +67,7 @@ console.log(`[CX] 项目目录: ${PROJECT_DIR}`);
 if (!process.env.AI_BACKEND) {
   process.env.AI_BACKEND = 'openai';
   process.env.OPENAI_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4';
-  process.env.OPENAI_API_KEY = process.env.ZHIPU_API_KEY_XIAOMA || process.env.ZHIPU_API_KEY_CX || '';
+  process.env.OPENAI_API_KEY = process.env.ZHIPU_API_KEY_CX || process.env.ZHIPU_API_KEY_XIAOMA || '';
   process.env.OPENAI_MODEL = 'glm-4.7-flash';
 
   if (!process.env.OPENAI_API_KEY) {
@@ -82,7 +86,7 @@ if (!teamMemory) {
   setCache('team_memory', teamMemory, 60 * 60 * 1000);
 }
 
-const sharedMemory = await getFullMemory(30);
+const sharedMemory = await getFullMemory(10);
 console.log(`[CX] 团队记忆 ${teamMemory.length} 字符，共享记忆 ${sharedMemory.length} 字符`);
 
 // ── Agent 实例 ──
@@ -91,6 +95,7 @@ const cx = createAgent({
   name: 'CX',
   color: '#10A37F',
   gridFile: 'grids/cx.js',
+  getModel: () => currentModel,
 });
 
 // ── 工具执行进度回调 ──
@@ -111,7 +116,7 @@ function createToolProgressCallback(agent) {
     const shortDetail = typeof detail === 'string' ? detail.substring(0, 40) : '';
     const progress = Math.min(30 + toolRound * 5, 90);
     try {
-      await agent.work(`${label}: ${shortDetail}`, progress);
+      await agent.work(`${currentTaskName} — ${label}`, progress);
     } catch {}
   };
 }
@@ -124,37 +129,63 @@ const MSG_PROTOCOL = {
   AT_CX: /@CX/i,
 };
 
-// ── 模型分层配置 ──
+// ── 模型分层配置（路由系统的 fallback 兜底）──
+// 主路由在 config/model-allocation.js，这里只做最后保底
 const MODEL_TIERS = {
-  // 日常: GLM-4.7-Flash（快速、稳定、永久免费）
-  normal: {
+  // 硅基 DS4 Pro（强推理）
+  siliconflowPro: {
     backend: 'openai',
-    openaiModel: 'glm-4.7-flash',
-    openaiBaseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-    openaiApiKey: process.env.ZHIPU_API_KEY_XIAOMA || process.env.ZHIPU_API_KEY_CX,
+    openaiModel: 'deepseek-ai/DeepSeek-V4-Pro',
+    openaiBaseUrl: 'https://api.siliconflow.cn/v1',
+    openaiApiKey: process.env.SILICONFLOW_API_KEY,
   },
-  // 日常首选: TaoToken DeepSeek V4 Flash
+  // 硅基 DS4 Flash（快速）
+  siliconflowFlash: {
+    backend: 'openai',
+    openaiModel: 'deepseek-ai/DeepSeek-V4-Flash',
+    openaiBaseUrl: 'https://api.siliconflow.cn/v1',
+    openaiApiKey: process.env.SILICONFLOW_API_KEY,
+  },
+  // TaoToken DS4 Pro
+  taotokenPro: {
+    backend: 'openai',
+    openaiModel: 'deepseek-v4-pro',
+    openaiBaseUrl: 'https://taotoken.net/api/v1',
+    openaiApiKey: process.env.TAOTOKEN_API_KEY,
+  },
+  // TaoToken DS4 Flash
   taotokenFlash: {
     backend: 'openai',
     openaiModel: 'deepseek-v4-flash',
     openaiBaseUrl: 'https://taotoken.net/api/v1',
     openaiApiKey: process.env.TAOTOKEN_API_KEY,
   },
-  // 代码: DeepSeek V4 Pro（强推理，@CX [代码] 触发）
-  code: {
+  // 火山 DS4 Flash
+  volcFlash: {
     backend: 'openai',
-    openaiModel: 'deepseek-ai/DeepSeek-V4-Pro',
-    openaiBaseUrl: 'https://api.siliconflow.cn/v1',
-    openaiApiKey: process.env.SILICONFLOW_API_KEY,
+    openaiModel: 'ep-20260602221852-f6q4v',
+    openaiBaseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+    openaiApiKey: process.env.ARK_API_KEY,
   },
-  // 兜底: GLM-4.7（DeepSeek 不可用时降级，省着用）
-  fallback: {
+  // 智谱 GLM-4.7（额度多，优先用完）
+  zhipuGLM: {
     backend: 'openai',
     openaiModel: 'glm-4.7',
     openaiBaseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-    openaiApiKey: process.env.ZHIPU_API_KEY_XIAOMA || process.env.ZHIPU_API_KEY_CX,
+    openaiApiKey: process.env.ZHIPU_API_KEY_CX || process.env.ZHIPU_API_KEY_XIAOMA,
+  },
+  // 智谱 GLM-4.7-Flash（永久免费兜底）
+  zhipuFlash: {
+    backend: 'openai',
+    openaiModel: 'glm-4.7-flash',
+    openaiBaseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    openaiApiKey: process.env.ZHIPU_API_KEY_CX || process.env.ZHIPU_API_KEY_XIAOMA,
   },
 };
+
+// ── 当前模型跟踪（用于心跳上报）──
+let currentModel = "glm-4.7-flash";
+let currentTaskName = '';  // 任务级状态显示
 
 // ── Provider 冷却机制（429后5分钟跳过同一provider） ──
 const providerCooldown = new Map();
@@ -234,12 +265,53 @@ let isProcessing = false;
 let processingStartTime = 0;
 const pendingMessages = [];
 
-// 看门狗：必须大于 ai-reply.js 的 TASK_TIMEOUT（默认300s），否则会误杀正常任务
-const WATCHDOG_TIMEOUT = parseInt(process.env.AI_TASK_TIMEOUT) || 300000;
+// 看门狗：动态超时，根据任务复杂度调整
+// 简单任务120s / 代码任务300s / 批量任务600s
 const WATCHDOG_GRACE = 30000;
+let currentWatchdogTimeout = 120000; // 默认120s
+
+// 根据消息内容判断任务复杂度并设置超时
+function setWatchdogTimeout(content) {
+  if (/批量|batch|大量|全部|所有文件|全量|所有项目/i.test(content)) {
+    currentWatchdogTimeout = 600000; // 批量600s
+  } else if (/@CX\s*\[代码\]/i.test(content)) {
+    currentWatchdogTimeout = 300000; // 代码300s
+  } else {
+    currentWatchdogTimeout = 120000; // 简单120s
+  }
+  console.log(`[CX] 看门狗超时: ${Math.round(currentWatchdogTimeout/1000)}秒 (${currentWatchdogTimeout === 600000 ? '批量' : currentWatchdogTimeout === 300000 ? '代码' : '简单'}任务)`);
+}
+
+// ── 任务摘要提取（任务级状态显示）──
+function extractTaskSummary(content) {
+  const match = content.match(/@CX\s*\[(?:代码|日常|委托|任务)\]\s*(.+)/i);
+  if (match) return match[1].substring(0, 30);
+  return content.substring(0, 30);
+}
+
+// ── 群聊通知辅助函数 ──
+async function sendGroupMessage(fromId, msg) {
+  try {
+    const res = await fetch('http://localhost:3210/api/message', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: fromId, content: msg, channel: 'group' }),
+    });
+    if (!res.ok) console.error('[CX] 群聊通知发送失败:', res.status);
+  } catch (e) {
+    console.error('[CX] 群聊通知发送异常:', e.message);
+  }
+}
+
+// ── 执行日志 ──
+function logExecution(event, detail) {
+  const line = '[' + new Date().toISOString() + '] ' + event + ': ' + detail + '\n';
+  try { appendFileSync(CX_LOG, line); } catch {}
+}
+
 setInterval(() => {
-  if (isProcessing && Date.now() - processingStartTime > WATCHDOG_TIMEOUT + WATCHDOG_GRACE) {
-    console.error(`[CX] 消息处理卡死超过 ${Math.round((WATCHDOG_TIMEOUT + WATCHDOG_GRACE)/1000)}秒，强制重置 isProcessing`);
+  if (isProcessing && Date.now() - processingStartTime > currentWatchdogTimeout + WATCHDOG_GRACE) {
+    console.error(`[CX] 消息处理卡死超过 ${Math.round((currentWatchdogTimeout + WATCHDOG_GRACE)/1000)}秒，强制重置 isProcessing`);
     isProcessing = false;
     if (pendingMessages.length > 0) {
       const nextMsg = pendingMessages.shift();
@@ -247,6 +319,19 @@ setInterval(() => {
     }
   }
 }, 30000);
+
+// 写故障报告文件
+function writeFaultReport(error, routeChain) {
+  try {
+    const now = new Date().toLocaleString('zh-CN');
+    const providers = routeChain.map(f => f.name).join(' → ');
+    const report = `# CX 故障报告\n\n时间: ${now}\n错误: ${error}\n尝试的 provider: ${providers}\n状态: 所有 provider 失败\n`;
+    writeFileSync('D:/BKS/team/通信/CX故障报告.md', report, 'utf-8');
+    console.log('[CX] 故障报告已写入');
+  } catch (e) {
+    console.error('[CX] 写故障报告失败:', e.message);
+  }
+}
 
 async function handleMessage(raw) {
   let msg;
@@ -281,6 +366,9 @@ async function handleMessage(raw) {
   if (isProcessing) {
     pendingMessages.push(p);
     console.log(`[CX] 消息排队中，当前队列: ${pendingMessages.length}`);
+    // 通知点2：排队通知
+    sendGroupMessage('cx', `当前任务执行中，已排队。队列: ${pendingMessages.length} 条`);
+    logExecution('QUEUE', 'pending: ' + pendingMessages.length);
     return;
   }
 
@@ -288,105 +376,139 @@ async function handleMessage(raw) {
   processingStartTime = Date.now();
   console.log(`[CX] 收到消息: ${content.substring(0, 80)}`);
 
+  // 任务级状态：提取任务摘要
+  currentTaskName = extractTaskSummary(content);
+
+  // 动态超时设置
+  setWatchdogTimeout(content);
+
+  // 通知点1：接活通知
+  sendGroupMessage('cx', `收到，开始执行: ${currentTaskName}`);
+  logExecution('RECEIVE', currentTaskName);
+
   try {
-    // 模型选择：[代码] → DeepSeek V4 Pro，[日常] → TaoToken Flash
     const isCodeTask = MSG_PROTOCOL.CODE_TASK.test(content);
-    let modelOverride = isCodeTask ? { ...MODEL_TIERS.code } : { ...MODEL_TIERS.taotokenFlash };
-    if (isCodeTask) {
-      console.log(`[CX] 代码任务，使用: ${modelOverride.openaiModel}`);
-    } else {
-      console.log(`[CX] 日常任务，使用: ${modelOverride.openaiModel}`);
-    }
 
-    // 按任务类型设置超时：日常30s，代码120s
-    process.env.CX_FETCH_TIMEOUT = isCodeTask ? '120000' : '30000';
-    console.log(`[CX] 超时设置: ${process.env.CX_FETCH_TIMEOUT}ms (${isCodeTask ? '代码' : '日常'}任务)`);
+    // 按任务类型设置 fetch 超时
+    process.env.CX_FETCH_TIMEOUT = isCodeTask ? '120000' : '60000';
+    logExecution('START', isCodeTask ? '代码任务' : '日常任务');
 
-    // 加载聊天历史
-    const chatHistory = (await loadChatHistory(20)) || [];
+    // 加载聊天历史（限制条数和单条长度，防止上下文过载导致模型返回空）
+    let chatHistory = (await loadChatHistory(10)) || [];
     if (!Array.isArray(chatHistory)) {
       console.error('[CX] chatHistory 不是数组，已重置为空数组');
       chatHistory = [];
     }
+    // 截断过长的历史消息，防止单条消息占用过多 token
+    chatHistory = chatHistory.map(m => ({
+      ...m,
+      content: typeof m.content === 'string' && m.content.length > 500
+        ? m.content.substring(0, 500) + '...(截断)'
+        : m.content,
+    }));
 
-    // 构建 prompt
+    // 构建 prompt（开头注入身份提醒，防止多轮工具调用后忘记身份）
+    const identityReminder = `你是 CX，BKS 研发部代码工程师。铁律：1.接到任务先在群里通知"收到，开始执行" 2.完成后回复 @CC [完成] 3.遇到阻塞上报 @CC [问题]。`;
     let prompt = '';
 
     if (MSG_PROTOCOL.CODE_TASK.test(content)) {
       const match = content.match(MSG_PROTOCOL.CODE_TASK);
-      prompt = `CC 派发了代码任务（需要高质量实现）：${match[1]}\n\n请执行任务，完成后回复 @CC [完成] 并附上文件路径。`;
+      prompt = `${identityReminder}\n\nCC 派发了代码任务（需要高质量实现）：${match[1]}\n\n请执行任务，完成后回复 @CC [完成] 并附上文件路径。`;
     } else if (MSG_PROTOCOL.DAILY_TASK.test(content)) {
       const match = content.match(MSG_PROTOCOL.DAILY_TASK);
-      prompt = `CC 派发了日常任务：${match[1]}\n\n请执行任务，完成后回复 @CC [完成] 并附上文件路径。`;
+      prompt = `${identityReminder}\n\nCC 派发了日常任务：${match[1]}\n\n请执行任务，完成后回复 @CC [完成] 并附上文件路径。`;
     } else if (MSG_PROTOCOL.DELEGATE.test(content)) {
       const match = content.match(MSG_PROTOCOL.DELEGATE);
-      prompt = `CC 内部委托：${match[1]}\n\n请执行委托，完成后回复 @CC [完成]。`;
+      prompt = `${identityReminder}\n\nCC 内部委托：${match[1]}\n\n请执行委托，完成后回复 @CC [完成]。`;
     } else {
-      prompt = `@CX 的消息：${content}\n\n请根据上下文回复。`;
+      prompt = `${identityReminder}\n\n@CX 的消息：${content}\n\n请根据上下文回复。`;
     }
 
+    // 智能模型路由：根据任务内容 + 上下文大小自动选择最优 provider
+    const contextSize = (SYSTEM_PROMPT?.length || 0) + JSON.stringify(chatHistory).length + prompt.length;
+    const routeResult = route(content, contextSize);
+    let modelOverride = routeResult.modelOverride || { ...MODEL_TIERS.volcFlash };
+    currentModel = modelOverride.openaiModel;
+    console.log(`[CX] 任务分类: ${routeResult.taskType}, 选中: ${routeResult.providerName}, 上下文: ${contextSize}字符`);
+
     // 生成回复（启用工具调用，CX 需要 bash/read_file/write_file 等工具执行任务）
-    // modelOverride 直接传入，无需修改/恢复 process.env
     let aiReply;
-    // 工具轮次：日常20次，代码50次（防无限循环靠 TASK_TIMEOUT 300s 兜底）
     const toolRounds = isCodeTask ? 50 : 20;
     console.log(`[CX] 工具轮次: ${toolRounds}次 (${isCodeTask ? '代码' : '日常'}任务)`);
 
     // 实时进度回调：每次工具执行时更新 agent 状态
     const onToolCall = createToolProgressCallback(cx);
 
-    // 降级链：代码任务 SiliconFlow → TaoToken Flash → GLM-4.7
-    const fallbackChain = isCodeTask
-      ? [
-          { name: 'SiliconFlow DS4', tier: MODEL_TIERS.code },
-          { name: 'TaoToken Flash', tier: MODEL_TIERS.taotokenFlash },
-          { name: '智谱 GLM-4.7', tier: MODEL_TIERS.fallback },
-        ]
-      : [
-          { name: 'TaoToken Flash', tier: MODEL_TIERS.taotokenFlash },
-          { name: '智谱 Flash', tier: MODEL_TIERS.normal },
-        ];
+    // 智能降级链：按 provider 健康度排序，动态选择
+    const routeChain = getRouteChain(content, contextSize);
 
     let lastErr;
-    for (let i = 0; i < fallbackChain.length; i++) {
-      const { name, tier } = fallbackChain[i];
-
-      // 跳过冷却中的 provider
-      if (isProviderOnCooldown(name)) {
-        console.log(`[CX] 跳过 ${name}（冷却中）`);
-        continue;
-      }
+    for (let i = 0; i < routeChain.length; i++) {
+      const { name, tierName, tier } = routeChain[i];
 
       modelOverride = { ...tier };
+      currentModel = modelOverride.openaiModel;
       try {
         console.log(`[CX] 尝试 ${name} (${modelOverride.openaiModel})`);
-        await cx.work(`启动: ${name}...`, 20);
+        await cx.work(`${currentTaskName} — 准备中`, 20);
         aiReply = await generateReply(SYSTEM_PROMPT, chatHistory, prompt, true, modelOverride, toolRounds, onToolCall);
+
+        // 调试日志：记录回复类型和长度
+        const replyType = typeof aiReply;
+        const replyLen = replyType === 'string' ? aiReply.length : (aiReply?.text?.length || 0);
+        console.log(`[CX] ${name} 回复: type=${replyType}, len=${replyLen}`);
+
+        // 空回复检测：模型返回成功但内容为空时，尝试下一个 provider
+        const replyText = typeof aiReply === 'string' ? aiReply : (aiReply?.text || '');
+        if (!replyText || !replyText.trim()) {
+          console.warn(`[CX] ${name} 返回空回复，尝试下一个 provider`);
+          reportHealth(tierName, 'unknown', '空回复');
+          aiReply = undefined;
+          continue;
+        }
+
+        // 成功 → 报告健康度
+        reportHealth(tierName, 'success');
         console.log(`[CX] ${name} 成功`);
-        break; // 成功，跳出降级链
+        break;
       } catch (err) {
         lastErr = err;
         console.log(`[CX] ${name} 失败: ${err.message.substring(0, 100)}`);
-        // 429 错误触发冷却
+
+        // 根据错误类型报告健康度
         if (/429|rate.?limit/i.test(err.message)) {
-          markProviderCooldown(name);
+          reportHealth(tierName, 'rate_limit');
+        } else if (/unterminated|truncat|json/i.test(err.message)) {
+          reportHealth(tierName, 'truncation');
+        } else if (/timeout|abort/i.test(err.message)) {
+          reportHealth(tierName, 'timeout');
+        } else if (/401|403/i.test(err.message)) {
+          reportHealth(tierName, 'auth_error');
+        } else {
+          reportHealth(tierName, 'unknown', err.message.substring(0, 50));
         }
-        if (i < fallbackChain.length - 1) {
+
+        if (i < routeChain.length - 1) {
           processingStartTime = Date.now(); // 刷新看门狗
-          continue; // 尝试下一个
+          continue;
         }
-        // 所有降级都失败，上报 CC
+        // 所有降级都失败，上报 CC + 写故障报告
         console.log(`[CX] 所有模型降级失败: ${lastErr.message}`);
+        // 通知点3：错误通知
+        sendGroupMessage('cx', `执行失败: ${lastErr.message.substring(0, 100)}`);
+        logExecution('FAIL', lastErr.message);
         aiReply = `@CC [问题] 所有模型降级失败: ${lastErr.message}，请指示。`;
+        writeFaultReport(lastErr.message, routeChain);
       }
     }
 
     // P0修复：所有 provider 都在冷却中时，aiReply 为 undefined
     if (!aiReply) {
-      const cooldownList = fallbackChain.map(f => f.name).filter(n => isProviderOnCooldown(n));
-      if (cooldownList.length === fallbackChain.length) {
+      const cooldownList = routeChain.map(f => f.name).filter(n => isProviderOnCooldown(n));
+      if (cooldownList.length === routeChain.length) {
         aiReply = `@CC [问题] 所有 API 提供商均在冷却中（${cooldownList.join('、')}），约5分钟后自动恢复。`;
         console.log(`[CX] 所有 provider 冷却中: ${cooldownList.join(', ')}`);
+        writeFaultReport(`所有 provider 冷却中: ${cooldownList.join(', ')}`, routeChain);
       }
     }
 
@@ -416,13 +538,20 @@ async function handleMessage(raw) {
       await cx.send('@CC [问题] 任务执行失败：AI 返回空回复');
     }
 
+    logExecution('DONE', currentTaskName);
   } catch (err) {
     console.error('[CX] 处理错误:', err.message);
+    // 通知点3：错误通知
+    sendGroupMessage('cx', `执行失败: ${err.message.substring(0, 100)}`);
+    logExecution('FAIL', err.message);
     try {
       await cx.send(`@CC [问题] 任务执行失败：${err.message}`);
     } catch {}
   } finally {
     isProcessing = false;
+    currentTaskName = '';
+    // 状态同步规则：任务完成后必须恢复 idle
+    await cx.idle().catch(() => {});
     if (pendingMessages.length > 0) {
       const nextMsg = pendingMessages.shift();
       console.log(`[CX] 处理排队消息，剩余: ${pendingMessages.length}`);
