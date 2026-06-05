@@ -63,20 +63,20 @@ const CX_LOG = join(process.cwd(), 'logs', 'cx-execution.log');
 const PROJECT_DIR = process.env.PROJECT_DIR || 'D:/BKS/projects/team-workspace';
 console.log(`[CX] 项目目录: ${PROJECT_DIR}`);
 
-// 环境变量兜底：如果 AI_BACKEND 未设置，默认使用智谱 GLM-4.7-Flash
+// 环境变量兜底：如果 AI_BACKEND 未设置，默认走 CC Switch 路由 (deepseek-v4-pro)
 if (!process.env.AI_BACKEND) {
   process.env.AI_BACKEND = 'openai';
-  process.env.OPENAI_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4';
+  process.env.OPENAI_BASE_URL = 'http://127.0.0.1:15721/v1';
   process.env.OPENAI_API_KEY = process.env.ZHIPU_API_KEY_CX || process.env.ZHIPU_API_KEY_XIAOMA || '';
-  process.env.OPENAI_MODEL = 'glm-4.7-flash';
+  process.env.OPENAI_MODEL = 'deepseek-v4-pro';
 
   if (!process.env.OPENAI_API_KEY) {
-    console.error('[CX] ❌ 错误: 智谱 API Key 未设置');
-    console.error('[CX] 请确保 .env 中有 ZHIPU_API_KEY_XIAOMA 或 ZHIPU_API_KEY_CX');
+    console.error('[CX] ❌ 错误: CC Switch API Key 未设置');
+    console.error('[CX] 请确保 .env 中有 ZHIPU_API_KEY_XIAOMA 或 ZHIPU_API_KEY_CX (GLM 作为最后兜底)');
     process.exit(1);
   }
 
-  console.log(`[CX] ✅ 默认模型: GLM-4.7-Flash（智谱永久免费）`);
+  console.log(`[CX] ✅ 默认模型: deepseek-v4-pro (CC Switch 路由)，GLM 作为最后兜底`);
 }
 
 // ── 加载记忆 ──
