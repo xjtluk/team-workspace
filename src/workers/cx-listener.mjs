@@ -106,11 +106,12 @@ function createToolProgressCallback(agent) {
   let toolRound = 0;
   return async (toolName, toolInput, roundIndex) => {
     toolRound++;
+    const label = TOOL_LABELS[toolName] || toolName;
+    const detail = toolInput?.command || toolInput?.path || toolInput?.pattern || '';
+    const shortDetail = typeof detail === 'string' ? detail.substring(0, 40) : '';
     const progress = Math.min(30 + toolRound * 5, 90);
-    // 中文概况，不暴露工具细节
-    const activity = `正在执行... (第${toolRound}步)`;
     try {
-      await agent.work(activity, progress);
+      await agent.work(`${label}: ${shortDetail}`, progress);
     } catch {}
   };
 }
@@ -359,7 +360,7 @@ async function handleMessage(raw) {
       modelOverride = { ...tier };
       try {
         console.log(`[CX] 尝试 ${name} (${modelOverride.openaiModel})`);
-        await cx.work('正在处理消息...', 20);
+        await cx.work(`启动: ${name}...`, 20);
         aiReply = await generateReply(SYSTEM_PROMPT, chatHistory, prompt, true, modelOverride, toolRounds, onToolCall);
         console.log(`[CX] ${name} 成功`);
         break; // 成功，跳出降级链
@@ -504,32 +505,21 @@ setInterval(() => {
 async function main() {
   // 注册 Agent
   await cx.connect();
-  // 启动时清除上次崩溃残留的状态
-  await cx.idle().catch(() => {});
   console.log('[CX] 已注册到 Workspace Server');
 
   // 连接 WebSocket
   await connectWebSocket();
 
-  // 优雅退出：重置状态 + 标记离线
+  // 优雅退出
   const cleanup = async () => {
     console.log('[CX] 正在断开连接...');
     try { unlinkSync(PID_FILE); } catch {}
-    try { await cx.idle(); } catch {}
     await cx.disconnect();
     process.exit(0);
   };
 
   process.on('SIGINT', cleanup);
   process.on('SIGTERM', cleanup);
-  process.on('uncaughtException', async (err) => {
-    console.error('[CX] uncaughtException:', err);
-    await cleanup();
-  });
-  process.on('unhandledRejection', async (err) => {
-    console.error('[CX] unhandledRejection:', err);
-    await cleanup();
-  });
 
   console.log('[CX] 监听启动，等待任务...');
 }

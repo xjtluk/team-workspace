@@ -59,6 +59,7 @@ const BLOCKED_BASH_PATTERNS = [
 
 // 允许写入的额外目录（团队协作需要跨项目写文件）
 const ALLOWED_DIRS = [
+  'D:/BKS/portfolio',
   'D:/BKS/team',
   'D:/BKS/projects',
 ];
