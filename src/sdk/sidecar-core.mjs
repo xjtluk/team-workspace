@@ -16,6 +16,20 @@ const AGENT_DEFAULTS = {
   color: '#10A37F',
 };
 
+// ── 429 重试工具 ──
+async function retryFetch(url, options, maxRetries = 2) {
+  for (let i = 0; i <= maxRetries; i++) {
+    const res = await fetch(url, options);
+    if (res.status === 429 && i < maxRetries) {
+      const delay = Math.min(1000 * Math.pow(2, i), 5000);
+      console.warn(`[HTTP] 429 Too Many Requests, ${delay}ms 后重试 (${i + 1}/${maxRetries})`);
+      await new Promise(r => setTimeout(r, delay));
+      continue;
+    }
+    return res;
+  }
+}
+
 // WebSocket connection management
 export class SidecarConnection {
   constructor(config) {
@@ -33,6 +47,9 @@ export class SidecarConnection {
     this.listeners = new Map();
     this._connected = false;
     this._reconnectTimer = null;
+    this.lastSeenTimestamp = 0;
+    this._offlinePulled = false;
+    this._seenMessageIds = new Set();
   }
 
   // Event emitter
@@ -56,7 +73,7 @@ export class SidecarConnection {
   }
 
   async _register() {
-    const res = await fetch(`${this.serverUrl}/api/register`, {
+    const res = await retryFetch(`${this.serverUrl}/api/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -92,10 +109,12 @@ export class SidecarConnection {
       this.reconnectDelay = 1000;
       this.lastMessageTime = Date.now();
       this._emit('connected');
+      this._pullOfflineOnConnect();
     });
 
     this.ws.on('close', (code) => {
       this._connected = false;
+      this._offlinePulled = false;
       console.log(`[${this.agentId}] WebSocket 断开 (${code})，${this.reconnectDelay}ms后重连`);
       this._scheduleReconnect();
       this._emit('disconnected');
@@ -131,16 +150,84 @@ export class SidecarConnection {
 
   _startHttpFallback() {
     this.httpFallbackInterval = setInterval(async () => {
-      // 始终发送心跳（带model），不管WebSocket是否连接
-      // WebSocket只传消息事件，不传model同步
       try {
-        await fetch(`${this.serverUrl}/api/heartbeat`, {
+        const res = await retryFetch(`${this.serverUrl}/api/heartbeat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ agentId: this.agentId, model: this.model }),
+          body: JSON.stringify({ agentId: this.agentId, model: this.model, lastSeenTimestamp: this.lastSeenTimestamp }),
         });
+        const data = await res.json();
+
+        // 首次上线 → 拉取离线消息
+        this._pullOfflineOnConnect();
+
+        // 处理心跳响应中的新消息（基于 lastSeenTimestamp 增量）
+        if (data.newMessages?.length) {
+          this._processNewMessages(data.newMessages);
+        }
+
+        // 更新时间戳
+        if (data.serverTimestamp) {
+          this.lastSeenTimestamp = data.serverTimestamp;
+        }
       } catch {}
     }, 15000);
+  }
+
+  // 拉取离线消息（仅首次连接时调用一次）
+  async _pullOfflineOnConnect() {
+    if (this._offlinePulled) return;
+    this._offlinePulled = true;
+    try {
+      const res = await retryFetch(`${this.serverUrl}/api/offline/pull?agentId=${encodeURIComponent(this.agentId)}`);
+      const data = await res.json();
+      if (data.ok && data.messages?.length) {
+        console.log(`[${this.agentId}] 拉取到 ${data.messages.length} 条离线消息`);
+        this._processNewMessages(data.messages);
+      }
+    } catch (e) {
+      console.error(`[${this.agentId}] 离线消息拉取失败: ${e.message}`);
+    }
+  }
+
+  // 协议消息过滤（在 core 层统一拦截，不派发给 handler）
+  _isProtocolMessage(content) {
+    if (!content) return true;
+    if (content.includes('[收到]')) return true;
+    if (content.includes('[问题]')) return true;
+    if (content.includes('[完成]')) return true;
+    if (content.includes('[子任务完成]')) return true;
+    if (content.trim() === 'hb') return true;
+    if (content.startsWith('当前任务执行中')) return true;
+    return false;
+  }
+
+  // 新消息处理 — 去重 + 协议过滤 + 触发 message 事件
+  _processNewMessages(messages) {
+    if (!messages?.length) return;
+    for (const msg of messages) {
+      if (this._seenMessageIds.has(msg.id)) continue;
+      this._seenMessageIds.add(msg.id);
+      // core 层拦截协议消息
+      if (this._isProtocolMessage(msg.content)) continue;
+      this._emit('message', {
+        type: 'new_message',
+        payload: {
+          id: msg.id,
+          from: msg.from,
+          fromName: msg.fromName,
+          content: msg.content,
+          type: msg.type,
+          channel: msg.channel,
+          timestamp: msg.timestamp,
+          replyTo: msg.replyTo,
+        },
+      });
+    }
+    // 防止 Set 无限增长
+    if (this._seenMessageIds.size > 10000) {
+      this._seenMessageIds = new Set([...this._seenMessageIds].slice(-5000));
+    }
   }
 
   _startWatchdog() {
@@ -175,10 +262,10 @@ export function parseMention(content) {
   return mentions ? mentions.map(m => m.slice(1).toLowerCase()) : [];
 }
 
-// Status reporting
+// Status reporting (with 429 retry)
 export async function reportStatus(agentId, status, activity = '', progress = 0, options = {}) {
   try {
-    const res = await fetch(`${SERVER_URL}/api/status`, {
+    const res = await retryFetch(`${SERVER_URL}/api/status`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ agentId, status, activity, progress, model: options.model || '', ...options }),
@@ -190,10 +277,10 @@ export async function reportStatus(agentId, status, activity = '', progress = 0,
   }
 }
 
-// Message sending
+// Message sending (with 429 retry)
 export async function sendMessage(from, content, channel = 'group') {
   try {
-    const res = await fetch(`${SERVER_URL}/api/message`, {
+    const res = await retryFetch(`${SERVER_URL}/api/message`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ from, content, channel }),

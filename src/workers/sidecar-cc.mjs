@@ -95,8 +95,7 @@ async function handleMessage(event) {
   // 忽略自己发的消息
   if (msg.from === AGENT_ID) return;
 
-  // 忽略协议消息（防止自循环）
-  if (msg.content.includes('[收到]') || msg.content.includes('[问题]') || msg.content.includes('[完成]') || msg.content.includes('[子任务完成]')) return;
+  // 协议消息已在 sidecar-core 层拦截，此处无需重复检查
 
   // 只处理 @CC 的消息
   if (!isAtAgent(msg.content, AGENT_ID)) return;
@@ -107,8 +106,10 @@ async function handleMessage(event) {
     // 更新状态为 working
     await reportStatus(AGENT_ID, 'working', '正在处理 @CC 消息', 30, { model: CLAUDE_MODEL });
 
-    // 发送已收到通知
-    await sendMessage(AGENT_ID, `@${msg.from} [收到] 消息已收到，正在处理...`);
+    // 只给人类发确认，不给其他 agent 发（避免消息循环）
+    if (['kk', 'xiaoma', 'xiaoma-ai'].includes(msg.from)) {
+      await sendMessage(AGENT_ID, `@${msg.from} [收到] 消息已收到，正在处理...`);
+    }
 
     // 执行 claude --print
     console.log(`[CC-Sidecar] 调用 claude --print (model: ${CLAUDE_MODEL})`);
@@ -121,7 +122,7 @@ async function handleMessage(event) {
       await sendMessage(AGENT_ID, reply);
       console.log(`[CC-Sidecar] 回复已发送 (${reply.length} 字符)`);
     } else {
-      await sendMessage(AGENT_ID, `@${msg.from} [完成] 任务已完成，无文本输出`);
+      // 无输出时不发消息（避免空回复触发循环）
       console.log(`[CC-Sidecar] 任务完成，无文本输出`);
     }
 
@@ -129,7 +130,10 @@ async function handleMessage(event) {
     await reportStatus(AGENT_ID, 'idle', '空闲中', 0);
   } catch (err) {
     console.error(`[CC-Sidecar] 处理失败: ${err.message}`);
-    await sendMessage(AGENT_ID, `@${msg.from} [问题] 任务执行失败: ${err.message.substring(0, 100)}`);
+    // 只给人类发错误通知，不给其他 agent 发
+    if (['kk', 'xiaoma', 'xiaoma-ai'].includes(msg.from)) {
+      await sendMessage(AGENT_ID, `@${msg.from} [问题] 任务执行失败: ${err.message.substring(0, 100)}`);
+    }
     await reportStatus(AGENT_ID, 'error', '任务执行失败', 0, { model: CLAUDE_MODEL });
     setTimeout(() => reportStatus(AGENT_ID, 'idle', '空闲中', 0, { model: CLAUDE_MODEL }), 3000);
   }

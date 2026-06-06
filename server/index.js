@@ -10,6 +10,7 @@ import statusRouter from './routes/status.js';
 import messageRouter from './routes/message.js';
 import heartbeatRouter, { startHeartbeatMonitor } from './routes/heartbeat.js';
 import registerRouter from './routes/register.js';
+import offlineRouter from './routes/offline.js';
 import historyRouter from './routes/history.js';
 import agentsRouter from './routes/agents.js';
 
@@ -33,9 +34,10 @@ async function start() {
 
   app.use('/api/status', statusRouter);
   app.use('/api/message', messageRouter);
-  app.use('/api/heartbeat', heartbeatRouter);
-  app.use('/api/register', registerRouter);
-  app.use('/api/history', historyRouter);
+app.use('/api/heartbeat', heartbeatRouter);
+app.use('/api/register', registerRouter);
+app.use('/api/offline', offlineRouter);
+app.use('/api/history', historyRouter);
   app.use('/api/agents', agentsRouter);
 
   // ✅ 修复 3.5：WebSocket 认证改为从 Header 或 subprotocol 获取 token
