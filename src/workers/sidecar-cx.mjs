@@ -65,6 +65,8 @@ const conn = new SidecarConnection({
 // ── 消息队列（FIFO 串行执行） ──
 const messageQueue = [];
 let isProcessing = false;
+let idleTimeout = null;
+let isErrorCoolingDown = false;
 
 function enqueue(msg) {
   messageQueue.push({ msg, enqueuedAt: Date.now() });
@@ -72,21 +74,43 @@ function enqueue(msg) {
 }
 
 async function processQueue() {
-  if (isProcessing || messageQueue.length === 0) return;
+  if (isProcessing) return;
+
+  // ???????????????
+  if (idleTimeout) {
+    clearTimeout(idleTimeout);
+    idleTimeout = null;
+    isErrorCoolingDown = false;
+  }
+
+  if (messageQueue.length === 0) return;
+
   isProcessing = true;
+  let lastTaskFailed = false;
 
   while (messageQueue.length > 0) {
     const item = messageQueue.shift();
-    // 跳过过期消息
     if (Date.now() - item.enqueuedAt > MSG_EXPIRE_MS) {
-      console.log(`[CX-Sidecar] 跳过过期消息: "${item.msg.content.substring(0, 50)}..."`);
+      console.log(`[CX-Sidecar] ??????: "${item.msg.content.substring(0, 50)}..."`);
       continue;
     }
-    await executeTask(item.msg);
+    const result = await executeTask(item.msg);
+    lastTaskFailed = !result.success;
   }
 
   isProcessing = false;
-  await reportStatus(AGENT_ID, 'idle', '空闲中', 0, { model: currentModel });
+
+  if (lastTaskFailed) {
+    console.log('[CX-Sidecar] ???????????error??30????idle');
+    isErrorCoolingDown = true;
+    idleTimeout = setTimeout(async () => {
+      idleTimeout = null;
+      isErrorCoolingDown = false;
+      await reportStatus(AGENT_ID, 'idle', '???', 0, { model: currentModel });
+    }, 30000);
+  } else {
+    await reportStatus(AGENT_ID, 'idle', '???', 0, { model: currentModel });
+  }
 }
 
 // ── 协议消息过滤（在入队前检查） ──
@@ -228,10 +252,12 @@ async function executeTask(msg) {
       await sendMessage(AGENT_ID, `@CC [完成] 任务已完成，无文本输出`);
       console.log(`[CX-Sidecar] 任务完成，无文本输出`);
     }
+    return { success: true };
   } catch (err) {
     console.error(`[CX-Sidecar] 处理失败: ${err.message}`);
     await sendMessage(AGENT_ID, `@CC [问题] 任务执行失败: ${err.message.substring(0, 100)}`);
     await reportStatus(AGENT_ID, 'error', '任务执行失败', 0, { model: currentModel });
+    return { success: false };
   }
 }
 
