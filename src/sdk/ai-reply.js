@@ -281,7 +281,9 @@ async function callOpenAI(systemPrompt, messages, useTools, config) {
     throw new Error(`OpenAI API error: ${response.status} ${err}`);
   }
 
-  const data = await response.json();
+  // Use text() + fixTruncatedJson to handle truncated API responses
+  const responseTextOA = await response.text();
+  const data = fixTruncatedJson(responseTextOA, 'OpenAI');
   // 璁板綍 API 瀹為檯杩斿洖鐨勬ā鍨嬪悕锛堥獙璇佹彁渚涘晢鏄惁浣跨敤浜嗚姹傜殑妯″瀷锛?  if (data.model) {
     console.log('[AI] 鈫?response.model:', data.model);
   }
@@ -451,6 +453,75 @@ function fixTruncatedUtf8(text) {
 }
 
 // Anthropic API 璋冪敤
+
+
+/**
+ * Fix truncated JSON by closing unclosed strings and balancing brackets.
+ * Used when API response is cut off due to model output truncation.
+ * @param {string} jsonStr - Raw JSON string from API response
+ * @param {string} source - Label for logging (e.g. 'OpenAI', 'Anthropic')
+ * @returns {object} Parsed JSON object
+ */
+function fixTruncatedJson(jsonStr, source) {
+  source = source || 'API';
+  // First try direct parse
+  try {
+    return JSON.parse(jsonStr);
+  } catch (e) {
+    console.warn('[AI] JSON parse failed (' + source + '), attempting truncation fix:', e.message);
+    
+    let fixed = jsonStr;
+    
+    // Fix 1: Close unclosed string (Unterminated string in JSON)
+    if (e.message.indexOf('Unterminated string') !== -1) {
+      const posMatch = e.message.match(/position (\d+)/);
+      if (posMatch) {
+        const pos = parseInt(posMatch[1]);
+        let inString = false;
+        for (let i = 0; i < Math.min(pos, fixed.length); i++) {
+          if (fixed[i] === '"' && (i === 0 || fixed[i-1] !== '\\')) {
+            inString = !inString;
+          }
+        }
+        if (inString) {
+          fixed = fixed.substring(0, pos) + '"' + fixed.substring(pos);
+        }
+      }
+    }
+    
+    // Fix 2: Balance braces and brackets (Unexpected end of JSON input)
+    if (e.message.indexOf('Unexpected end of JSON input') !== -1 || e.message.indexOf('Unterminated string') !== -1) {
+      let braceCount = 0;
+      let bracketCount = 0;
+      let inString = false;
+      for (let i = 0; i < fixed.length; i++) {
+        const ch = fixed[i];
+        if (ch === '"' && (i === 0 || fixed[i-1] !== '\\')) {
+          inString = !inString;
+        }
+        if (!inString) {
+          if (ch === '{') braceCount++;
+          if (ch === '}') braceCount--;
+          if (ch === '[') bracketCount++;
+          if (ch === ']') bracketCount--;
+        }
+      }
+      if (inString) { fixed += '"'; }
+      while (bracketCount > 0) { fixed += ']'; bracketCount--; }
+      while (braceCount > 0) { fixed += '}'; braceCount--; }
+    }
+    
+    try {
+      const result = JSON.parse(fixed);
+      console.warn('[AI] JSON truncated, auto-fixed successfully (' + source + ')');
+      return result;
+    } catch (e2) {
+      console.error('[AI] JSON fix failed (' + source + '):', e2.message);
+      throw new Error('API response parse failed after fix attempt: ' + e2.message);
+    }
+  }
+}
+
 async function callAnthropic(systemPrompt, messages, useTools, config) {
   config = config || getConfig();
   const body = {
@@ -489,13 +560,8 @@ async function callAnthropic(systemPrompt, messages, useTools, config) {
     console.warn('[AI] 妫€娴嬪埌 UTF-8 缂栫爜闂锛屽皾璇曚慨澶?);
   }
 
-  let data;
-  try {
-    data = JSON.parse(responseText);
-  } catch (parseErr) {
-    // JSON 瑙ｆ瀽澶辫触锛屽彲鑳芥槸鍝嶅簲琚埅鏂?    console.error('[AI] JSON 瑙ｆ瀽澶辫触锛屽搷搴斿彲鑳借鎴柇:', parseErr.message);
-    throw new Error(`API 鍝嶅簲瑙ｆ瀽澶辫触: ${parseErr.message}`);
-  }
+  const data = fixTruncatedJson(responseText, 'Anthropic');
+
 
   // 璁板綍 API 瀹為檯杩斿洖鐨勬ā鍨嬪悕
   if (data.model) {
