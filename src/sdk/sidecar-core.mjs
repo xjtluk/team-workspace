@@ -128,7 +128,12 @@ export class SidecarConnection {
       this.lastMessageTime = Date.now();
       try {
         const event = JSON.parse(data.toString());
-        this._emit('message', event);
+        // 统一走 _processNewMessages 去重，防止 WebSocket 和离线拉取重复
+        if (event.type === 'new_message' && event.payload) {
+          this._processNewMessages([event.payload]);
+        } else {
+          this._emit('message', event);
+        }
       } catch (e) {
         console.error(`[${this.agentId}] 消息解析失败: ${e.message}`);
       }

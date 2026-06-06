@@ -224,6 +224,14 @@ function handleMessage(event) {
   // 只处理 @CX 的消息
   if (!isAtAgent(msg.content, AGENT_ID)) return;
 
+  // 只处理任务类消息，忽略CC的普通回复（防止CC的分析/讨论被当成任务）
+  const taskPrefixes = ['[任务]', '[方案审查]', '[委托]'];
+  const hasTaskPrefix = taskPrefixes.some(p => msg.content.includes(p));
+  if (!hasTaskPrefix && msg.from === 'cc') {
+    console.log(`[CX-Sidecar] 跳过CC非任务消息: "${msg.content.substring(0, 60)}..."`);
+    return;
+  }
+
   console.log(`[CX-Sidecar] 收到 @CX 消息，入队: "${msg.content.substring(0, 80)}..."`);
   enqueue(msg);
 }
