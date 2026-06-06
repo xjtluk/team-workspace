@@ -19,11 +19,31 @@ const AGENT_ID = 'cx';
 const AGENT_NAME = 'CX';
 const PROJECT_DIR = process.env.PROJECT_DIR || 'D:/BKS/team';
 const CODEX_SANDBOX = process.env.CODEX_SANDBOX || 'workspace-write';
-const CODEX_MODEL = process.env.CODEX_MODEL || 'deepseek-v4-pro';
 const CODEX_PATH = process.env.CODEX_PATH || 'C:/Users/Administrator/AppData/Roaming/npm/node_modules/@openai/codex/bin/codex.js';
 const REPLY_FILE = join(PROJECT_DIR, 'data', 'cx-reply.txt');
 const EXEC_TIMEOUT = 240000; // 240秒，复杂任务需要更多时间
 const MSG_EXPIRE_MS = 300000; // 消息过期时间：5分钟
+
+// ── 模型选择策略 ──
+const MODELS = {
+  heavy: { model: 'deepseek-v4-pro', reasoning: 'high' },    // 多文件、批量重构、复杂推理
+  medium: { model: 'deepseek-v4-pro', reasoning: 'medium' },  // 单文件修改、PR审查
+  light: { model: 'glm-4.7-flash', reasoning: 'low' },        // 读文件、列目录、快速检查
+};
+
+function selectModel(prompt) {
+  const p = prompt.toLowerCase();
+  // 轻量任务关键词
+  if (/^(ls|cat|读取|列出|检查|确认|验证|查看|统计)/.test(p) && prompt.length < 200) {
+    return MODELS.light;
+  }
+  // 重量任务关键词
+  if (/批量|重构|多文件|架构|整个|全部|所有文件/.test(p) || prompt.length > 1000) {
+    return MODELS.heavy;
+  }
+  // 默认中等
+  return MODELS.medium;
+}
 
 // 确保 data 目录存在
 const dataDir = join(PROJECT_DIR, 'data');
@@ -32,11 +52,13 @@ if (!existsSync(dataDir)) {
 }
 
 // ── 实例 ──
+let currentModel = MODELS.medium.model;
+
 const conn = new SidecarConnection({
   agentId: AGENT_ID,
   agentName: AGENT_NAME,
   color: '#10A37F',
-  model: CODEX_MODEL,
+  model: currentModel,
   serverUrl: 'http://localhost:3210',
 });
 
@@ -64,7 +86,7 @@ async function processQueue() {
   }
 
   isProcessing = false;
-  await reportStatus(AGENT_ID, 'idle', '空闲中', 0, { model: CODEX_MODEL });
+  await reportStatus(AGENT_ID, 'idle', '空闲中', 0, { model: currentModel });
 }
 
 // ── 协议消息过滤（在入队前检查） ──
@@ -85,11 +107,11 @@ function isProtocolMessage(content) {
 
 // ── 状态上报 ──
 async function pingStatus() {
-  await reportStatus(AGENT_ID, isProcessing ? 'working' : 'idle', isProcessing ? '正在执行任务' : '空闲中', 0, { model: CODEX_MODEL });
+  await reportStatus(AGENT_ID, isProcessing ? 'working' : 'idle', isProcessing ? '正在执行任务' : '空闲中', 0, { model: currentModel });
 }
 
 // ── codex exec 调用（带两阶段超时保护） ──
-function execCodex(prompt) {
+function execCodex(prompt, modelOverride) {
   return new Promise((resolve, reject) => {
     // 注入 CX 身份指令
     const fullPrompt = [
@@ -104,10 +126,12 @@ function execCodex(prompt) {
     ].join('\n');
 
     // 把 prompt 作为命令行参数传递，避免 stdin 管道问题
+    const selectedModel = modelOverride || MODELS.medium.model;
+    const selectedReasoning = Object.values(MODELS).find(m => m.model === selectedModel)?.reasoning || 'medium';
     const args = [
       CODEX_PATH,
       'exec',
-      '-m', CODEX_MODEL,
+      '-m', selectedModel,
       '-C', PROJECT_DIR,
       '-s', CODEX_SANDBOX,
       '-o', REPLY_FILE,
@@ -184,14 +208,16 @@ function readReplyFile() {
 
 // ── 执行单个任务 ──
 async function executeTask(msg) {
-  console.log(`[CX-Sidecar] 开始执行: "${msg.content.substring(0, 80)}..."`);
+  const modelChoice = selectModel(msg.content);
+  currentModel = modelChoice.model;
+  console.log(`[CX-Sidecar] 开始执行 (model: ${currentModel}, reasoning: ${modelChoice.reasoning}): "${msg.content.substring(0, 80)}..."`);
 
   try {
-    await reportStatus(AGENT_ID, 'working', `正在处理: ${msg.content.substring(0, 30)}`, 30, { model: CODEX_MODEL });
+    await reportStatus(AGENT_ID, 'working', `正在处理: ${msg.content.substring(0, 30)}`, 30, { model: currentModel });
 
-    await execCodex(msg.content);
+    await execCodex(msg.content, modelChoice.model);
 
-    await reportStatus(AGENT_ID, 'working', '正在组织回复', 70, { model: CODEX_MODEL });
+    await reportStatus(AGENT_ID, 'working', '正在组织回复', 70, { model: currentModel });
 
     const reply = readReplyFile();
 
@@ -205,7 +231,7 @@ async function executeTask(msg) {
   } catch (err) {
     console.error(`[CX-Sidecar] 处理失败: ${err.message}`);
     await sendMessage(AGENT_ID, `@CC [问题] 任务执行失败: ${err.message.substring(0, 100)}`);
-    await reportStatus(AGENT_ID, 'error', '任务执行失败', 0, { model: CODEX_MODEL });
+    await reportStatus(AGENT_ID, 'error', '任务执行失败', 0, { model: currentModel });
   }
 }
 
@@ -224,12 +250,17 @@ function handleMessage(event) {
   // 只处理 @CX 的消息
   if (!isAtAgent(msg.content, AGENT_ID)) return;
 
-  // 只处理任务类消息，忽略CC的普通回复（防止CC的分析/讨论被当成任务）
-  const taskPrefixes = ['[任务]', '[方案审查]', '[委托]'];
-  const hasTaskPrefix = taskPrefixes.some(p => msg.content.includes(p));
-  if (!hasTaskPrefix && msg.from === 'cc') {
-    console.log(`[CX-Sidecar] 跳过CC非任务消息: "${msg.content.substring(0, 60)}..."`);
-    return;
+  // CC的消息：协议消息已被core层过滤，剩余的@CX消息都应处理（包括任务、追问、指令）
+  // KK/小马的@CX消息也应处理（老板可以直接指派CX）
+  // 其他agent的消息只处理带任务前缀的
+  const isFromHumanOrCC = ['cc', 'kk', 'xiaoma', 'xiaoma-ai'].includes(msg.from);
+  if (!isFromHumanOrCC) {
+    const taskPrefixes = ['[任务]', '[方案审查]', '[委托]'];
+    const hasTaskPrefix = taskPrefixes.some(p => msg.content.includes(p));
+    if (!hasTaskPrefix) {
+      console.log(`[CX-Sidecar] 跳过非任务消息: "${msg.content.substring(0, 60)}..."`);
+      return;
+    }
   }
 
   console.log(`[CX-Sidecar] 收到 @CX 消息，入队: "${msg.content.substring(0, 80)}..."`);
@@ -240,7 +271,7 @@ function handleMessage(event) {
 async function main() {
   console.log(`[CX-Sidecar] 启动...`);
   console.log(`[CX-Sidecar] 项目目录: ${PROJECT_DIR}`);
-  console.log(`[CX-Sidecar] 模型: ${CODEX_MODEL}`);
+  console.log(`[CX-Sidecar] 模型: ${currentModel}`);
   console.log(`[CX-Sidecar] 沙箱: ${CODEX_SANDBOX}`);
 
   conn.on('message', handleMessage);
@@ -252,7 +283,7 @@ async function main() {
 
   const cleanup = async () => {
     console.log(`[CX-Sidecar] 正在断开...`);
-    await reportStatus(AGENT_ID, 'offline', '已离线', 0, { model: CODEX_MODEL });
+    await reportStatus(AGENT_ID, 'offline', '已离线', 0, { model: currentModel });
     await conn.disconnect();
     process.exit(0);
   };

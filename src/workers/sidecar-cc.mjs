@@ -97,8 +97,10 @@ async function handleMessage(event) {
 
   // 协议消息已在 sidecar-core 层拦截，此处无需重复检查
 
-  // 只处理 @CC 的消息
-  if (!isAtAgent(msg.content, AGENT_ID)) return;
+  // 消息路由：@CC 的消息 或 KK/小马的直接消息（不需要@CC）
+  const isDirectToMe = isAtAgent(msg.content, AGENT_ID);
+  const isFromHuman = ['kk', 'xiaoma', 'xiaoma-ai'].includes(msg.from);
+  if (!isDirectToMe && !isFromHuman) return;
 
   console.log(`[CC-Sidecar] 收到 @CC 消息: "${msg.content.substring(0, 80)}..."`);
 
