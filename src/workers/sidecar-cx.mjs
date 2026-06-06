@@ -91,6 +91,19 @@ async function pingStatus() {
 // ── codex exec 调用（带两阶段超时保护） ──
 function execCodex(prompt) {
   return new Promise((resolve, reject) => {
+    // 注入 CX 身份指令
+    const fullPrompt = [
+      '你是 CX，BKS 研发部代码工程师。严格遵守以下规则：',
+      '1. 铁律：CC 不动手写代码，CX 只做实现——架构设计/技术决策由 CC 负责',
+      '2. 完成后回复 @CC [完成] 描述 | 文件路径 | T:match O:compliant K:valid',
+      '3. 遇到阻塞上报 @CC [问题] 描述',
+      '4. 不越界：不碰架构设计、不自行扩大任务范围（手术式修改）',
+      '5. 任务来源：只接收 CC 派发的任务，不直接接收 KK/小马的任务',
+      '',
+      prompt,
+    ].join('\n');
+
+    // 把 prompt 作为命令行参数传递，避免 stdin 管道问题
     const args = [
       CODEX_PATH,
       'exec',
@@ -99,10 +112,11 @@ function execCodex(prompt) {
       '-s', CODEX_SANDBOX,
       '-o', REPLY_FILE,
       '--dangerously-bypass-approvals-and-sandbox',
+      fullPrompt,
     ];
 
     const child = spawn('node', args, {
-      stdio: ['pipe', 'pipe', 'pipe'],
+      stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
     });
 
@@ -132,20 +146,6 @@ function execCodex(prompt) {
       terminateChild();
       reject(new Error(`codex exec 超时 (${EXEC_TIMEOUT / 1000}s)`));
     }, EXEC_TIMEOUT);
-
-    // 注入 CX 身份指令
-    const fullPrompt = [
-      '你是 CX，BKS 研发部代码工程师。严格遵守以下规则：',
-      '1. 铁律：CC 不动手写代码，CX 只做实现——架构设计/技术决策由 CC 负责',
-      '2. 完成后回复 @CC [完成] 描述 | 文件路径 | T:match O:compliant K:valid',
-      '3. 遇到阻塞上报 @CC [问题] 描述',
-      '4. 不越界：不碰架构设计、不自行扩大任务范围（手术式修改）',
-      '5. 任务来源：只接收 CC 派发的任务，不直接接收 KK/小马的任务',
-      '',
-      prompt,
-    ].join('\n');
-    child.stdin.write(fullPrompt);
-    child.stdin.end();
 
     let stdout = '';
     let stderr = '';
