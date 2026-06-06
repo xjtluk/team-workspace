@@ -1,81 +1,160 @@
-/* 状态栏样式 — 增强版 */
+/* 状态栏 — 位于 Canvas 下方，正常文档流，高度与输入框齐平 */
 .status-bar {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 32px;
+  height: var(--ws-status-height);
   background: var(--bg-tertiary);
-  border-top: 1px solid rgba(255,255,255,0.08);
+  border-top: 2px solid rgba(255,255,255,0.08);
   display: flex;
   align-items: center;
-  justify-content: space-between;
   padding: 0 16px;
-  font-size: 10px;
+  font-size: 11px;
   z-index: 100;
-  gap: 16px;
+  gap: 24px;
+  flex-shrink: 0;
+  overflow: hidden;
 }
 
+/* ---- 工作室状态（左侧固定） ---- */
 .status-connection {
   display: flex;
   align-items: center;
   gap: 6px;
-  color: var(--text-secondary);
-  font-family: var(--font-pixel);
-  font-size: 9px;
+  font-family: var(--font-body);
+  font-size: 12px;
   flex-shrink: 0;
+  padding-right: 16px;
+  border-right: 2px solid rgba(255,255,255,0.1);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.status-connection-prefix {
+  color: var(--text-primary);
 }
 
 .status-dot {
-  width: 6px;
-  height: 6px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
+  flex-shrink: 0;
 }
 
 .dot-green {
-  background: var(--accent-green);
-  box-shadow: 0 0 4px var(--accent-green);
+  background: #67C23A;
+  box-shadow: 0 0 8px rgba(103,194,58,0.6);
 }
 
 .dot-red {
-  background: var(--accent-red);
-  box-shadow: 0 0 4px var(--accent-red);
+  background: #F56C6C;
+  box-shadow: 0 0 8px rgba(245,108,108,0.6);
 }
 
+.status-connection-state {
+  font-weight: bold;
+}
+
+/* ---- Agent 列表（紧跟工作室状态，不挤到最右） ---- */
 .status-agents {
   display: flex;
-  gap: 20px;
+  gap: 28px;
+  align-items: center;
+  overflow-x: auto;
   flex: 1;
-  justify-content: flex-end;
-  overflow: hidden;
+  min-width: 0;
 }
 
-.status-agent-item {
+.status-agents::-webkit-scrollbar {
+  height: 3px;
+}
+
+.status-agents::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.15);
+  border-radius: 2px;
+}
+
+/* 每个 Agent — 两行卡片 */
+.status-agent-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-family: var(--font-body);
+  font-size: 11px;
+  min-width: 0;
+  flex-shrink: 0;
+  padding: 5px 12px;
+  border-radius: 3px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.03);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* 第一行：名称：状态 [| 任务] [进度%] */
+.status-agent-row1 {
   display: flex;
   align-items: center;
-  gap: 5px;
-  font-family: var(--font-pixel);
-  font-size: 9px;
+  gap: 3px;
   white-space: nowrap;
-}
-
-.status-agent-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex-shrink: 0;
+  overflow: hidden;
 }
 
 .status-agent-name {
   color: var(--text-primary);
-  font-weight: bold;
+  font-weight: 700;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-family: var(--font-pixel);
 }
 
 .status-agent-status {
-  opacity: 0.85;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.status-agent-task {
+  color: #bbb;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+  font-size: 11px;
+  font-weight: 400;
 }
 
 .status-agent-progress {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  margin-left: 2px;
+}
+
+/* 第二行：当前模型：xxx */
+.status-agent-row2 {
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  overflow: hidden;
+  gap: 2px;
+}
+
+.status-agent-model-label {
+  color: var(--text-secondary);
   opacity: 0.7;
-  font-size: 8px;
+  flex-shrink: 0;
+  font-size: 10px;
+}
+
+.status-agent-model-value {
+  color: #c0c0d0;
+  opacity: 0.9;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 10px;
+}
+
+.status-agent-empty {
+  color: var(--text-secondary);
+  opacity: 0.5;
+  font-size: 11px;
+  font-family: var(--font-pixel);
 }

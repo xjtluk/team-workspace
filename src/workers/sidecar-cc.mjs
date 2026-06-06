@@ -33,12 +33,13 @@ const conn = new SidecarConnection({
   agentId: AGENT_ID,
   agentName: AGENT_NAME,
   color: '#99ccff',
+  model: CLAUDE_MODEL,
   serverUrl: 'http://localhost:3210',
 });
 
 // ── 状态上报 ──
 async function pingStatus() {
-  await reportStatus(AGENT_ID, 'idle', '空闲中', 0);
+  await reportStatus(AGENT_ID, 'idle', '空闲中', 0, { model: CLAUDE_MODEL });
 }
 
 // ── claude --print 调用 ──
@@ -56,6 +57,7 @@ function execClaude(prompt) {
 
     const child = spawn(CLAUDE_PATH, [
       '--print',
+      '--dangerously-skip-permissions',
     ], {
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
@@ -103,7 +105,7 @@ async function handleMessage(event) {
 
   try {
     // 更新状态为 working
-    await reportStatus(AGENT_ID, 'working', '正在处理 @CC 消息', 30);
+    await reportStatus(AGENT_ID, 'working', '正在处理 @CC 消息', 30, { model: CLAUDE_MODEL });
 
     // 发送已收到通知
     await sendMessage(AGENT_ID, `@${msg.from} [收到] 消息已收到，正在处理...`);
@@ -113,7 +115,7 @@ async function handleMessage(event) {
     const reply = await execClaude(msg.content);
 
     // 更新进度
-    await reportStatus(AGENT_ID, 'working', '正在组织回复', 70);
+    await reportStatus(AGENT_ID, 'working', '正在组织回复', 70, { model: CLAUDE_MODEL });
 
     if (reply) {
       await sendMessage(AGENT_ID, reply);
@@ -128,8 +130,8 @@ async function handleMessage(event) {
   } catch (err) {
     console.error(`[CC-Sidecar] 处理失败: ${err.message}`);
     await sendMessage(AGENT_ID, `@${msg.from} [问题] 任务执行失败: ${err.message.substring(0, 100)}`);
-    await reportStatus(AGENT_ID, 'error', '任务执行失败', 0);
-    setTimeout(() => reportStatus(AGENT_ID, 'idle', '空闲中', 0), 3000);
+    await reportStatus(AGENT_ID, 'error', '任务执行失败', 0, { model: CLAUDE_MODEL });
+    setTimeout(() => reportStatus(AGENT_ID, 'idle', '空闲中', 0, { model: CLAUDE_MODEL }), 3000);
   }
 }
 
@@ -148,7 +150,7 @@ async function main() {
 
   const cleanup = async () => {
     console.log(`[CC-Sidecar] 正在断开...`);
-    await reportStatus(AGENT_ID, 'offline', '已离线', 0);
+    await reportStatus(AGENT_ID, 'offline', '已离线', 0, { model: CLAUDE_MODEL });
     await conn.disconnect();
     process.exit(0);
   };

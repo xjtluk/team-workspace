@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 /**
+ * @deprecated 2026-06-06 已被 sidecar-cc.mjs 替代。此文件保留供参考，不再使用。
  * CC Agent — Hub-Spoke 模式
  *
  * 职责：
@@ -231,7 +232,8 @@ K（结果有效）：✅ 成果文件可正常读取，可直接用于下一环
 记住：你是技术负责人，接到任务就执行，完成就汇报，有问题就上报。`;
 
 // ── Agent 注册 ──
-const cc = createAgent({ id: 'cc', name: 'CC', color: '#4A90D9' });
+let ccModel = process.env.ANTHROPIC_MODEL || process.env.OPENAI_MODEL || 'MiMo 2.5 Pro';
+const cc = createAgent({ id: 'cc', name: 'CC', color: '#4A90D9', getModel: () => ccModel });
 await cc.connect();
 // 启动时清除上次崩溃残留的状态
 await cc.idle().catch(() => {});

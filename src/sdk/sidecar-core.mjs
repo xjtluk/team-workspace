@@ -22,6 +22,7 @@ export class SidecarConnection {
     this.agentId = config.agentId;
     this.agentName = config.agentName || config.agentId.toUpperCase();
     this.color = config.color || AGENT_DEFAULTS.color;
+    this.model = config.model || '';
     this.serverUrl = config.serverUrl || SERVER_URL;
     this.wsUrl = this.serverUrl.replace(/^http/, 'ws');
     this.ws = null;
@@ -130,12 +131,13 @@ export class SidecarConnection {
 
   _startHttpFallback() {
     this.httpFallbackInterval = setInterval(async () => {
-      if (this._connected) return;
+      // 始终发送心跳（带model），不管WebSocket是否连接
+      // WebSocket只传消息事件，不传model同步
       try {
         await fetch(`${this.serverUrl}/api/heartbeat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ agentId: this.agentId }),
+          body: JSON.stringify({ agentId: this.agentId, model: this.model }),
         });
       } catch {}
     }, 15000);
@@ -179,7 +181,7 @@ export async function reportStatus(agentId, status, activity = '', progress = 0,
     const res = await fetch(`${SERVER_URL}/api/status`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ agentId, status, activity, progress, ...options }),
+      body: JSON.stringify({ agentId, status, activity, progress, model: options.model || '', ...options }),
     });
     return res.ok;
   } catch (e) {

@@ -17,8 +17,8 @@ import { join } from 'path';
 // ── 配置 ──
 const AGENT_ID = 'cx';
 const AGENT_NAME = 'CX';
-const PROJECT_DIR = process.env.PROJECT_DIR || 'D:/BKS/projects/team-workspace';
-const CODEX_SANDBOX = process.env.CODEX_SANDBOX || 'read-only';
+const PROJECT_DIR = process.env.PROJECT_DIR || 'D:/BKS/team';
+const CODEX_SANDBOX = process.env.CODEX_SANDBOX || 'workspace-write';
 const CODEX_MODEL = process.env.CODEX_MODEL || 'deepseek-v4-pro';
 const CODEX_PATH = process.env.CODEX_PATH || 'C:/Users/Administrator/AppData/Roaming/npm/node_modules/@openai/codex/bin/codex.js';
 const REPLY_FILE = join(PROJECT_DIR, 'data', 'cx-reply.txt');
@@ -34,12 +34,13 @@ const conn = new SidecarConnection({
   agentId: AGENT_ID,
   agentName: AGENT_NAME,
   color: '#10A37F',
+  model: CODEX_MODEL,
   serverUrl: 'http://localhost:3210',
 });
 
 // ── 状态上报 ──
 async function pingStatus() {
-  await reportStatus(AGENT_ID, 'idle', '空闲中', 0);
+  await reportStatus(AGENT_ID, 'idle', '空闲中', 0, { model: CODEX_MODEL });
 }
 
 // ── codex exec 调用 ──
@@ -52,6 +53,7 @@ function execCodex(prompt) {
       '-C', PROJECT_DIR,
       '-s', CODEX_SANDBOX,
       '-o', REPLY_FILE,
+      '--dangerously-bypass-approvals-and-sandbox',
     ];
 
     const child = spawn('node', args, {
@@ -59,8 +61,19 @@ function execCodex(prompt) {
       windowsHide: true,
     });
 
-    // 通过 stdin 传入 prompt（避免中文编码问题）
-    child.stdin.write(prompt);
+    // 构建完整 prompt，注入 CX 身份指令
+    const fullPrompt = [
+      '你是 CX，BKS 研发部代码工程师。严格遵守以下规则：',
+      '1. 铁律：CC 不动手写代码，CX 只做实现——架构设计/技术决策由 CC 负责',
+      '2. 接到任务先在群内通知"收到，开始执行"',
+      '3. 完成后回复 @CC [完成] 描述 | 文件路径 | T:match O:compliant K:valid',
+      '4. 遇到阻塞上报 @CC [问题] 描述',
+      '5. 不越界：不碰架构设计、不自行扩大任务范围（手术式修改）',
+      '6. 任务来源：只接收 CC 派发的任务，不直接接收 KK/小马的任务',
+      '',
+      prompt,
+    ].join('\n');
+    child.stdin.write(fullPrompt);
     child.stdin.end();
 
     let stdout = '';
@@ -112,7 +125,7 @@ async function handleMessage(event) {
 
   try {
     // 更新状态为 working
-    await reportStatus(AGENT_ID, 'working', '正在处理 @CX 消息', 30);
+    await reportStatus(AGENT_ID, 'working', '正在处理 @CX 消息', 30, { model: CODEX_MODEL });
 
     // 发送已收到通知
     await sendMessage(AGENT_ID, `@${msg.from} [收到] 消息已收到，正在执行: ${msg.content.substring(0, 50)}...`);
@@ -122,7 +135,7 @@ async function handleMessage(event) {
     await execCodex(msg.content);
 
     // 更新进度
-    await reportStatus(AGENT_ID, 'working', '正在组织回复', 70);
+    await reportStatus(AGENT_ID, 'working', '正在组织回复', 70, { model: CODEX_MODEL });
 
     // 读取回复
     const reply = readReplyFile();
@@ -140,8 +153,8 @@ async function handleMessage(event) {
   } catch (err) {
     console.error(`[CX-Sidecar] 处理失败: ${err.message}`);
     await sendMessage(AGENT_ID, `@${msg.from} [问题] 任务执行失败: ${err.message.substring(0, 100)}`);
-    await reportStatus(AGENT_ID, 'error', '任务执行失败', 0);
-    setTimeout(() => reportStatus(AGENT_ID, 'idle', '空闲中', 0), 3000);
+    await reportStatus(AGENT_ID, 'error', '任务执行失败', 0, { model: CODEX_MODEL });
+    setTimeout(() => reportStatus(AGENT_ID, 'idle', '空闲中', 0, { model: CODEX_MODEL }), 3000);
   }
 }
 
@@ -162,7 +175,7 @@ async function main() {
 
   const cleanup = async () => {
     console.log(`[CX-Sidecar] 正在断开...`);
-    await reportStatus(AGENT_ID, 'offline', '已离线', 0);
+    await reportStatus(AGENT_ID, 'offline', '已离线', 0, { model: CODEX_MODEL });
     await conn.disconnect();
     process.exit(0);
   };

@@ -2,31 +2,53 @@
 /**
  * CX (Codex) Agent 启动脚本 — 多模型降级链配置
  *
- * CX 代码实现任务降级链（按 model-allocation.yaml）：
- *   1. SiliconFlow DeepSeek V4 Flash（主力，2000万永久免费）
- *   2. 火山方舟 DeepSeek V4 Flash（备用，50万+200万/天可续）
- *   3. 火山方舟 Doubao-2.0-code（代码特化）
- *   4. 火山方舟 Doubao-2.0-lite（低成本批量）
- *   5. 智谱 GLM-4.5-air（战略储备）
+ * CX 模型分层：
+ *   日常: 火山方舟 DS4 Flash（优先用完额度）→ TaoToken Flash → GLM-4.7-Flash
+ *   代码: SiliconFlow DS4 Pro → 火山 DS4 Flash → TaoToken Flash → GLM-4.7
+ *   兜底: GLM-4.7（智谱，DeepSeek不可用时降级）
  *
  * 用法：
  *   node start-cx.mjs
  *   PROJECT_DIR=D:/BKS/projects/other node start-cx.mjs
  */
-import 'dotenv/config';
+import { readFileSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+// 手动加载 .env（dotenv ESM import 在 watchdog spawn 环境下不加载变量）
+const __dirname = dirname(fileURLToPath(import.meta.url));
+try {
+  const envContent = readFileSync(join(__dirname, '.env'), 'utf8');
+  for (const line of envContent.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eqIdx = trimmed.indexOf('=');
+    if (eqIdx === -1) continue;
+    const key = trimmed.slice(0, eqIdx).trim();
+    let val = trimmed.slice(eqIdx + 1).trim();
+    // 去掉引号包裹的值：KEY="value" → value, KEY='value' → value
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+      val = val.slice(1, -1);
+    }
+    if (!process.env[key]) process.env[key] = val;
+  }
+  console.log('[CX] 已手动加载 .env 配置');
+} catch (e) {
+  console.warn('[CX] 无法加载 .env:', e.message);
+}
 
 // CX 直连 provider（路由器 OpenAI 端点不支持动态路由）
 // 降级链由 ai-reply.js 的重试机制 + cx-listener 的 [困难] 标记处理
 // ── CX 模型分层配置 ──
-// 日常: GLM-4.7-Flash（智谱永久免费，快速稳定）
-// 代码: DeepSeek V4 Pro（SiliconFlow，强推理，@CX [代码] 触发）
-// 兜底: GLM-4.7（智谱 500万额度，DeepSeek 不可用时降级）
+// 日常: 火山方舟 DS4 Flash（优先用完额度）→ TaoToken Flash → GLM-4.7-Flash
+// 代码: SiliconFlow DS4 Pro → 火山 DS4 Flash → TaoToken Flash → GLM-4.7
+// 兜底: GLM-4.7（智谱，DeepSeek不可用时降级）
 const CX_MODELS = {
   // 日常模型 — 快速、稳定、永久免费
   normal: {
     name: '智谱 GLM-4.7-Flash',
     baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-    apiKey: process.env.ZHIPU_API_KEY_XIAOMA || process.env.ZHIPU_API_KEY_CX,
+    apiKey: process.env.ZHIPU_API_KEY_CX || process.env.ZHIPU_API_KEY_XIAOMA,
     model: 'glm-4.7-flash',
   },
   // 代码模型 — 强推理，用于复杂代码任务
@@ -40,7 +62,7 @@ const CX_MODELS = {
   fallback: {
     name: '智谱 GLM-4.7',
     baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-    apiKey: process.env.ZHIPU_API_KEY_XIAOMA || process.env.ZHIPU_API_KEY_CX,
+    apiKey: process.env.ZHIPU_API_KEY_CX || process.env.ZHIPU_API_KEY_XIAOMA,
     model: 'glm-4.7',
   },
 };

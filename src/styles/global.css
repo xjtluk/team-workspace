@@ -20,7 +20,7 @@
   --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --ws-right-width: 456px;          /* 原380 + 1/5 = 456 */
   --ws-resize-handle: 6px;
-  --ws-status-height: 32px;
+  --ws-status-height: 70px;
 }
 
 html, body {
@@ -39,13 +39,22 @@ html, body {
 .workspace {
   display: flex;
   width: 100%;
-  height: calc(100% - var(--ws-status-height));
+  height: 100%;
   position: relative;
 }
 
 .workspace-left {
   flex: 1;
   min-width: 400px;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+.workspace-canvas {
+  flex: 1;
+  min-height: 0;
   position: relative;
   overflow: hidden;
 }
@@ -90,8 +99,8 @@ html, body {
   background: rgba(255,255,255,0.4);
 }
 
-/* CRT 扫描线效果 */
-.workspace-left::after {
+/* CRT 扫描线效果 — 仅 Canvas 区域 */
+.workspace-canvas::after {
   content: '';
   position: absolute;
   top: 0;
@@ -109,6 +118,49 @@ html, body {
   z-index: 10;
 }
 
+/* 重启通知 Toast */
+.restart-toast {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 24px;
+  background: var(--bg-tertiary);
+  border: 2px solid var(--accent-green);
+  box-shadow: 2px 2px 0 rgba(0,0,0,0.4), 0 0 12px rgba(103, 194, 58, 0.3);
+  z-index: 1000;
+  font-family: var(--font-pixel);
+  font-size: 10px;
+  animation: toastSlideIn 0.3s ease-out, toastSlideOut 0.3s ease-in 3.7s forwards;
+}
+
+.restart-toast-icon {
+  font-size: 16px;
+  animation: toastSpin 0.6s ease-out;
+}
+
+.restart-toast-text {
+  color: var(--accent-green);
+}
+
+@keyframes toastSlideIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+@keyframes toastSlideOut {
+  from { opacity: 1; }
+  to { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+}
+
+@keyframes toastSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 /* 响应式：小屏幕 */
 @media (max-width: 900px) {
   .workspace {
@@ -117,7 +169,12 @@ html, body {
 
   .workspace-left {
     min-width: 0;
-    height: 55%;
+    height: 60%;
+  }
+
+  .workspace-canvas {
+    flex: 1;
+    min-height: 0;
   }
 
   .workspace-right {

@@ -31,6 +31,7 @@ const DEFAULT_OPTIONS = {
  * @param {string} [config.color]    — 角色主色
  * @param {string} [config.gridFile] — 像素网格数据文件路径
  * @param {string} [config.serverUrl]— 服务端地址，默认 http://localhost:3210
+ * @param {Function} [config.getModel] — 可选回调，返回当前使用的模型名，心跳时上报
  * @returns {Object} agent 客户端接口
  */
 export function createAgent(config) {
@@ -83,10 +84,17 @@ export function createAgent(config) {
       }
     }
 
-    // 启动心跳（含离线消息拉取）
+    // 启动心跳（含离线消息拉取 + 模型名上报）
     heartbeatTimer = setInterval(async () => {
       try {
-        const data = await post('/api/heartbeat', { agentId: id });
+        const payload = { agentId: id };
+        // 如有 getModel 回调，心跳时附带当前模型名（保护：getModel 异常不能杀死心跳）
+        if (opts.getModel) {
+          try { payload.model = opts.getModel(); } catch (e) {
+            console.warn('[Agent] getModel() 异常:', e.message);
+          }
+        }
+        const data = await post('/api/heartbeat', payload);
         // 离线期间有排队消息 → 拉取并回调
         if (data.pendingMessages > 0 && onMessageCallback) {
           const history = await fetch(`${serverUrl}/api/history?limit=${data.pendingMessages}`)
@@ -95,7 +103,9 @@ export function createAgent(config) {
             history.messages.forEach(msg => onMessageCallback(msg));
           }
         }
-      } catch {}
+      } catch (e) {
+        console.warn('[Agent] 心跳发送失败:', e.message);
+      }
     }, opts.heartbeatInterval);
 
     // 上报在线状态

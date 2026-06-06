@@ -17,6 +17,7 @@ router.get('/', (req, res) => {
     location: a.location,
     online: !!a.online,
     last_seen: a.last_seen,
+    model: a.model || '',
   })));
 });
 

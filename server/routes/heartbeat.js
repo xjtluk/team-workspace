@@ -7,7 +7,7 @@ const router = Router();
 const HEARTBEAT_TIMEOUT = 60000; // 60 秒
 
 router.post('/', (req, res) => {
-  const { agentId, lastSeenTimestamp } = req.body;
+  const { agentId, lastSeenTimestamp, model } = req.body;
 
   if (!agentId) {
     return res.status(400).json({ error: 'agentId is required' });
@@ -20,17 +20,26 @@ router.post('/', (req, res) => {
 
   const now = Date.now();
 
-  // 更新在线状态
-  run('UPDATE agents SET online = 1, last_seen = ? WHERE id = ?', [now, agentId]);
+  // 心跳只保活，不盲目重置状态
+  // 只有 agent 之前是 offline 时才重置为 idle（首次上线）
+  // working/talking/thinking 等状态由 agent 自己管理
+  const wasOffline = agent.current_status === 'offline' || !agent.online;
+  const newStatus = wasOffline ? 'idle' : agent.current_status;
+
+  if (model) {
+    run('UPDATE agents SET online = 1, last_seen = ?, model = ?, current_status = ? WHERE id = ?', [now, model, newStatus, agentId]);
+  } else {
+    run('UPDATE agents SET online = 1, last_seen = ?, current_status = ? WHERE id = ?', [now, newStatus, agentId]);
+  }
 
   // 处理离线队列
   const pending = queryOne('SELECT COUNT(*) as count FROM offline_queue WHERE to_id = ? AND delivered = 0', [agentId]);
   run('UPDATE offline_queue SET delivered = 1 WHERE to_id = ? AND delivered = 0', [agentId]);
 
-  // 广播上线状态
+  // 广播上线状态（含 model 和 status，确保前端实时更新）
   broadcast({
     type: 'agent_online',
-    payload: { agentId, online: true },
+    payload: { agentId, online: true, model: model || agent.model, status: newStatus },
   });
 
   // 查询新消息（自上次心跳以来）

@@ -5,13 +5,13 @@ import { broadcastStatusChange } from '../ws/handler.js';
 const router = Router();
 
 router.post('/', (req, res) => {
-  const { agentId, status, activity = '', progress = 0, location } = req.body;
+  const { agentId, status, activity = '', progress = 0, location, model } = req.body;
 
   if (!agentId || !status) {
     return res.status(400).json({ error: 'agentId and status are required' });
   }
 
-  const validStatuses = ['idle', 'working', 'talking', 'error', 'offline'];
+  const validStatuses = ['idle', 'working', 'talking', 'thinking', 'error', 'offline'];
   if (!validStatuses.includes(status)) {
     return res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` });
   }
@@ -31,12 +31,17 @@ router.post('/', (req, res) => {
     [status, activity, progress, resolvedLocation, now, agentId]
   );
 
+  // 如果提供了 model，单独更新
+  if (model) {
+    run(`UPDATE agents SET model = ? WHERE id = ?`, [model, agentId]);
+  }
+
   run(
     `INSERT INTO status_log (agent_id, status, activity, progress, location, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
     [agentId, status, activity, progress, resolvedLocation, now]
   );
 
-  broadcastStatusChange(agentId, status, activity, progress, resolvedLocation);
+  broadcastStatusChange(agentId, status, activity, progress, resolvedLocation, model);
 
   res.json({ ok: true, timestamp: now });
 });

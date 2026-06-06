@@ -5,6 +5,8 @@ import './PixelOffice.css';
 const CELL_SIZE = 5;
 const CANVAS_W = 1000;
 const CANVAS_H = 700;
+const CANVAS_PX_W = 2000;  // 实际像素分辨率 (2x)
+const CANVAS_PX_H = 1400;
 const MAX_DT = 0.05;
 
 // ═══════════════════════ 16-bit 像素风统一色值表 ═══════════════════════
@@ -19,21 +21,29 @@ const PALETTE = {
   deskTop:      '#dbb46a',
   monitorFrame: '#2a2a2a',
   screenCode:   '#aaffaa',
-  dashboardBg:  '#1a262e',
-  dashboardBdr: '#44ccff',
   bossWall:     '#5a3e2e',
   bossFloor:    '#3a2a1a',
   carpet:       '#4a5568',
   serverRack:   '#2d3748',
   meetingTable: '#8B7355',
   arcadeBody:   '#2d1f4a',
-  // 新增：区域分隔墙（高对比，10px 厚）
-  divWall:      '#c4956a',
-  divWallDark:  '#8b5a3a',
-  divWallLight: '#dab88a',
-  doorFrame:    '#6b4a3a',
+  // 区域分隔墙（5px 厚，柔和色）
+  divWall:      '#a89880',
+  divWallDark:  '#706050',
+  divWallLight: '#c0b098',
+  doorFrame:    '#605040',
   doorOpen:     '#1a1008',
   floorEdge:    '#586d50',
+  // 区域叠加色（半透明覆盖在统一地板上）
+  overlayReception: 'rgba(100,90,80,0.12)',
+  overlayBoss:      'rgba(58,42,26,0.40)',
+  overlayServer:    'rgba(20,24,30,0.50)',
+  overlayMeeting:   'rgba(58,66,80,0.35)',
+  overlayLounge:    'rgba(58,42,32,0.30)',
+  // 天花板管道
+  pipeHeat:    '#c85a54',
+  pipeCable:   '#5480c8',
+  pipeVent:    '#888888',
 };
 
 // ── 角色主题色 ──
@@ -54,17 +64,18 @@ const EASING = {
   linear:        t => t,
 };
 
-// ═══════════════════════ 6区布局 ═══════════════════════
+// ═══════════════════════ 6区布局（5px薄墙） ═══════════════════════
 // ┌──────────────────────────────────────────────────────────────┐
-// │ 左上 Dashboard    │  中部工位区(3列×2行)  │ 右上 Boss Office │
-// │ 30~250, 130~260  │  270~730, 40~430     │ 750~970, 50~190  │
-// ├──────────────────┤                      ├──────────────────┤
-// │ 左下 Server Room │  中下 Meeting Area   │ 右下 Entertainment│
-// │ 30~150, 450~660  │  380~720, 450~660    │ 730~970, 450~660 │
-// └──────────────────────────────────────────────────────────────┘
+// │ 左上 Reception    │  中部工位区(3列×2行)  │ 右上 Boss Office │
+// │ 16~246, 114~429   │  300~735, 125~415    │ 745~988, 114~439 │
+// ├───────────────────┤                      ├─────薄墙(740)────┤
+// │ 左下 Server Room  │  中下 Meeting Area   │ 右下 Lounge      │
+// │ 10~368, 465~679   │  380~716, 465~679    │ 725~988, 465~679 │
+// └───────────────────┴─────薄墙(372/720)────┴──────────────────┘
+// 水平墙 y=450 (5px) | 垂直墙 x=740,372,720 (5px)
 
 // ── 6个工位（3列×2行）──
-// 工位区：x 275~715, y 115~415 （分隔墙 258 右侧 ~ 738 左侧）
+// 工位区：x 275~735, y 115~415
 const DESK_CONFIGS = [
   { id: 'cx',     name: 'CX',   role: '代码工程师', theme: '#ffaa66', gridCol: 0, gridRow: 0 },
   { id: 'cc',     name: 'CC',   role: '软件架构师', theme: '#99ccff', gridCol: 1, gridRow: 0 },
@@ -148,13 +159,32 @@ const CHAR_STATES = {
 
 const charAnimState = {};
 
-// 空闲散步点
+// 空闲散步点 — 覆盖全办公室6区
 const WANDER_POINTS = [
+  // 工位区过道
   { x: 420, y: 400 },
   { x: 560, y: 410 },
   { x: 480, y: 430 },
   { x: 350, y: 420 },
   { x: 620, y: 395 },
+  // 接待区
+  { x: 120, y: 250 },
+  { x: 200, y: 300 },
+  { x: 160, y: 350 },
+  // Boss Office 门口
+  { x: 730, y: 220 },
+  // 下层过道
+  { x: 200, y: 500 },
+  { x: 500, y: 500 },
+  { x: 750, y: 500 },
+  // 会议室
+  { x: 450, y: 560 },
+  { x: 550, y: 540 },
+  // 休息区
+  { x: 800, y: 560 },
+  { x: 880, y: 580 },
+  // 饮水机旁
+  { x: 220, y: 470 },
 ];
 
 function getCharState(agentId) {
@@ -210,13 +240,57 @@ function updateCharState(agentId, agent, dt, allAgents) {
     return;
   }
 
-  // 空闲/离线 — 散步
+
+  // error 状态 — 走向 Server Room（机房）
+  if (agent.status === "error") {
+    const errorSpot = { x: 180, y: 570 };
+    const dist = Math.sqrt((cs.x - errorSpot.x) ** 2 + (cs.y - errorSpot.y) ** 2);
+    if (dist > 5) {
+      startTweenMove(cs, errorSpot.x, errorSpot.y, speed);
+    } else {
+      cs.isMoving = false; cs.moveProgress = 1;
+      cs.x = errorSpot.x; cs.y = errorSpot.y;
+    }
+    cs.bobPhase += dt * 15; // 快速抖动
+    return;
+  }
+
+  // talking 状态 — 走向 Meeting Area（会议室）
+  if (agent.status === "talking") {
+    const meetingSpot = { x: 540, y: 570 };
+    const dist = Math.sqrt((cs.x - meetingSpot.x) ** 2 + (cs.y - meetingSpot.y) ** 2);
+    if (dist > 5) {
+      startTweenMove(cs, meetingSpot.x, meetingSpot.y, speed);
+    } else {
+      cs.isMoving = false; cs.moveProgress = 1;
+      cs.x = meetingSpot.x; cs.y = meetingSpot.y;
+    }
+    cs.bobPhase += dt * 3;
+    return;
+  }
+
+  // thinking 状态 — 走向 Boss Office 门口
+  if (agent.status === "thinking") {
+    const thinkingSpot = { x: 750, y: 280 };
+    const dist = Math.sqrt((cs.x - thinkingSpot.x) ** 2 + (cs.y - thinkingSpot.y) ** 2);
+    if (dist > 5) {
+      startTweenMove(cs, thinkingSpot.x, thinkingSpot.y, speed);
+    } else {
+      cs.isMoving = false; cs.moveProgress = 1;
+      cs.x = thinkingSpot.x; cs.y = thinkingSpot.y;
+    }
+    cs.bobPhase += dt * 6;
+    return;
+  }
+  // 空闲/离线 — 全办公室自由散步
   if (agent.status === 'idle' || agent.status === 'offline') {
+    // 刚从工作状态切换过来，先停顿一下
     if (cs.prevStatus === 'working') { cs._idleTimer = 0; cs._returnTimer = 0; }
     if (!cs._idleTimer) cs._idleTimer = 0;
     if (!cs._returnTimer) cs._returnTimer = 0;
     cs._returnTimer += dt;
-    if (cs._returnTimer < 1.5) {
+    // 从工位起身后的停顿
+    if (cs._returnTimer < 1.2) {
       cs.isMoving = false;
       cs.bobPhase += dt * 2;
       return;
@@ -225,16 +299,18 @@ function updateCharState(agentId, agent, dt, allAgents) {
     const distToTarget = Math.sqrt((cs.x - cs.moveTargetX) ** 2 + (cs.y - cs.moveTargetY) ** 2);
     if (distToTarget < 5) {
       cs.isMoving = false; cs.moveProgress = 1;
-      if (cs._idleTimer > (2 + Math.random() * 3)) {
+      // 到达目的地后随机停顿 1~4 秒
+      const pauseTime = 1 + Math.random() * 3;
+      if (cs._idleTimer > pauseTime) {
         cs._idleTimer = 0;
-        const candidates = WANDER_POINTS.filter(p =>
-          Math.sqrt((p.x - home.x) ** 2 + (p.y - home.y) ** 2) > 120
-        );
-        const pick = candidates[Math.floor(Math.random() * candidates.length)] || WANDER_POINTS[0];
+        // 随机选一个散步点（不限距离，全办公室可达）
+        const pick = WANDER_POINTS[Math.floor(Math.random() * WANDER_POINTS.length)];
+        // 随机速度变化：慢逛 0.4x ~ 快走 0.8x
+        const speedMul = 0.4 + Math.random() * 0.4;
         startTweenMove(cs,
-          pick.x + (Math.random() - 0.5) * 60,
-          pick.y + (Math.random() - 0.5) * 30,
-          speed * 0.6
+          pick.x + (Math.random() - 0.5) * 40,
+          pick.y + (Math.random() - 0.5) * 20,
+          speed * speedMul
         );
       }
     } else {
@@ -293,13 +369,14 @@ export function PixelOffice({ agents, onHoverDesk }) {
     const ctx = canvas.getContext('2d');
     ctx.imageSmoothingEnabled = false;
 
-    // 预渲染静态背景
+    // 预渲染静态背景（2x 像素密度）
     if (!bgCanvasRef.current) {
       const bg = document.createElement('canvas');
-      bg.width = CANVAS_W;
-      bg.height = CANVAS_H;
+      bg.width = CANVAS_PX_W;
+      bg.height = CANVAS_PX_H;
       const bgCtx = bg.getContext('2d');
       bgCtx.imageSmoothingEnabled = false;
+      bgCtx.scale(2, 2);  // 逻辑坐标 1000×700 → 实际 2000×1400
       drawFullBackground(bgCtx);
       bgCanvasRef.current = bg;
     }
@@ -349,8 +426,12 @@ export function PixelOffice({ agents, onHoverDesk }) {
 
       const currentAgents = agentsRef.current;
 
-      // 绘制预渲染背景
-      ctx.drawImage(bgCanvasRef.current, 0, 0);
+      // 2x 像素密度变换
+      ctx.save();
+      ctx.scale(2, 2);
+
+      // 绘制预渲染背景（2000×1400 → 逻辑 1000×700）
+      ctx.drawImage(bgCanvasRef.current, 0, 0, CANVAS_PX_W, CANVAS_PX_H, 0, 0, CANVAS_W, CANVAS_H);
 
       // 绘制动画元素（含黑板角色状态卡）
       drawAnimationLayer(ctx, dt, currentAgents);
@@ -378,6 +459,8 @@ export function PixelOffice({ agents, onHoverDesk }) {
         ctx.globalAlpha = 1;
       });
 
+      ctx.restore();  // 恢复 2x 缩放
+
       gameLoopRef.current = requestAnimationFrame(gameLoop);
     };
     gameLoop(0);
@@ -389,7 +472,7 @@ export function PixelOffice({ agents, onHoverDesk }) {
     };
   }, []);
 
-  return <canvas ref={canvasRef} width={CANVAS_W} height={CANVAS_H} class="pixel-canvas" />;
+  return <canvas ref={canvasRef} width={CANVAS_PX_W} height={CANVAS_PX_H} class="pixel-canvas" />;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -410,130 +493,248 @@ function drawFullBackground(ctx) {
     }
   }
 
+  // ── 区域叠加色层（在统一地板上叠加各区域特征色）──
+  ctx.fillStyle = PALETTE.overlayReception;
+  ctx.fillRect(0, 108, 372, 342);
+  ctx.fillStyle = PALETTE.overlayBoss;
+  ctx.fillRect(745, 108, 255, 342);
+  ctx.fillStyle = PALETTE.overlayServer;
+  ctx.fillRect(0, 450, 372, 250);
+  ctx.fillStyle = PALETTE.overlayMeeting;
+  ctx.fillRect(372, 450, 348, 250);
+  ctx.fillStyle = PALETTE.overlayLounge;
+  ctx.fillRect(720, 450, 280, 250);
+
   // ══════════════════════════════════════
-  //  区域分隔墙系统（10px 厚，高对比色）
+  //  区域分隔墙系统（5px 厚，柔和色，开放布局）
   // ══════════════════════════════════════
 
   // ── 上方墙壁带（天花板+墙壁区域）──
-  ctx.fillStyle = PALETTE.wall;
+  ctx.fillStyle = '#8a7a6a';
   ctx.fillRect(0, 0, CANVAS_W, 108);
-  ctx.fillStyle = PALETTE.wallDark;
-  ctx.fillRect(0, 104, CANVAS_W, 4);
+  ctx.fillStyle = '#6a5a4a';
+  ctx.fillRect(0, 105, CANVAS_W, 3);
+  // 墙壁面板纹理（横向线条）
+  ctx.strokeStyle = PALETTE.wallPanel;
+  ctx.lineWidth = 0.5;
+  for (let wy = 12; wy < 100; wy += 16) {
+    ctx.beginPath(); ctx.moveTo(0, wy); ctx.lineTo(CANVAS_W, wy); ctx.stroke();
+  }
 
-  // ── 天花板灯条 ──
+  // ── 天花板增强：区域铭牌 ──
+  const ceilingSigns = [
+    { text: 'RECEPTION', x: 80, color: '#c0a080' },
+    { text: 'WORKSPACE', x: 460, color: '#a0b090' },
+    { text: 'BOSS OFFICE', x: 850, color: '#b08060' },
+    { text: 'SERVER', x: 110, color: '#8090a0' },
+    { text: 'MEETING', x: 510, color: '#8090b0' },
+    { text: 'LOUNGE', x: 855, color: '#b0a080' },
+  ];
+  ctx.font = 'bold 9px "Press Start 2P"';
+  ctx.textAlign = 'center';
+  ceilingSigns.forEach(s => {
+    // 铭牌底板
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.fillRect(s.x - 40, 25, 80, 14);
+    ctx.fillStyle = s.color;
+    ctx.fillText(s.text, s.x, 36);
+  });
+  ctx.textAlign = 'start';
+
+  // ── 天花板增强：管道系统 ──
+  // 暖气管
+  ctx.fillStyle = PALETTE.pipeHeat;
+  ctx.fillRect(0, 44, CANVAS_W, 3);
+  // 电缆管
+  ctx.fillStyle = PALETTE.pipeCable;
+  ctx.fillRect(0, 58, CANVAS_W, 3);
+  // 通风管
+  ctx.fillStyle = PALETTE.pipeVent;
+  ctx.fillRect(0, 72, CANVAS_W, 3);
+  // 管道支架
+  for (let px = 80; px < CANVAS_W; px += 160) {
+    ctx.fillStyle = '#666';
+    ctx.fillRect(px, 42, 2, 7);
+    ctx.fillRect(px, 56, 2, 7);
+    ctx.fillRect(px, 70, 2, 7);
+  }
+  // 管道弯头（Boss房上方）
+  ctx.fillStyle = PALETTE.pipeHeat;
+  ctx.fillRect(780, 44, 3, 14);
+  ctx.fillStyle = PALETTE.pipeCable;
+  ctx.fillRect(850, 58, 3, 14);
+
+  // ── 天花板增强：通风口格栅 ──
+  const ventPositions = [120, 380, 640, 880];
+  ventPositions.forEach(vx => {
+    ctx.fillStyle = '#555';
+    ctx.fillRect(vx, 50, 30, 16);
+    ctx.strokeStyle = '#777';
+    ctx.lineWidth = 0.8;
+    for (let vi = 0; vi < 4; vi++) {
+      ctx.beginPath(); ctx.moveTo(vx + 2, 53 + vi * 3.5); ctx.lineTo(vx + 28, 53 + vi * 3.5); ctx.stroke();
+    }
+  });
+
+  // ── 天花板增强：消防喷淋头 ──
+  const sprinklerPos = [60, 250, 420, 580, 750, 920];
+  sprinklerPos.forEach(sx => {
+    ctx.fillStyle = '#aaa';
+    ctx.fillRect(sx, 80, 4, 4);
+    ctx.fillStyle = '#888';
+    ctx.fillRect(sx + 1, 84, 2, 3);
+  });
+
+  // ── 天花板灯条（暖黄渐变）──
   drawCeilingLights(ctx);
 
-  // ═══════════════ 墙体系列（10px厚，三层立体感） ═══════════════
+  // ═══════════════ 5px薄墙体系 ═══════════════
 
-  // ── 垂直墙1：Dashboard 区 ↔ 工位区（x=258）──
+  // ── 垂直墙：工位区 ↔ Boss Office（x=740，5px厚）──
   ctx.fillStyle = PALETTE.divWallDark;
-  ctx.fillRect(258, 108, 10, 340);
+  ctx.fillRect(740, 108, 5, 340);
   ctx.fillStyle = PALETTE.divWall;
-  ctx.fillRect(260, 108, 6, 340);
+  ctx.fillRect(741, 110, 3, 336);
   ctx.fillStyle = PALETTE.divWallLight;
-  ctx.fillRect(261, 108, 4, 340);
+  ctx.fillRect(742, 112, 1, 332);
+  // 墙头装饰横梁
+  ctx.fillStyle = PALETTE.divWallDark;
+  ctx.fillRect(738, 108, 7, 4);
+  // 门洞（工位区 ↔ Boss Office）— 加宽
+  ctx.fillStyle = PALETTE.doorOpen;
+  ctx.fillRect(741, 170, 4, 75);
+  ctx.fillStyle = PALETTE.doorFrame;
+  ctx.fillRect(737, 168, 12, 4);
+  ctx.fillRect(737, 243, 12, 4);
+
+  // ── 水平墙：上方区域 ↔ 下方区域（y=450，5px厚）──
+  ctx.fillStyle = PALETTE.divWallDark;
+  ctx.fillRect(0, 450, CANVAS_W, 5);
+  ctx.fillStyle = PALETTE.divWall;
+  ctx.fillRect(0, 451, CANVAS_W, 3);
+  ctx.fillStyle = PALETTE.divWallLight;
+  ctx.fillRect(0, 452, CANVAS_W, 1);
   // 墙头横梁
   ctx.fillStyle = PALETTE.divWallDark;
-  ctx.fillRect(255, 108, 16, 6);
-  // 门洞（Dashboard ↔ 工位区）
+  ctx.fillRect(0, 447, CANVAS_W, 4);
+  // 门洞左（过道 ↔ Server Room）：x=170-224
   ctx.fillStyle = PALETTE.doorOpen;
-  ctx.fillRect(260, 290, 6, 60);
+  ctx.fillRect(170, 451, 54, 4);
   ctx.fillStyle = PALETTE.doorFrame;
-  ctx.fillRect(256, 288, 14, 5);
-  ctx.fillRect(256, 347, 14, 5);
+  ctx.fillRect(166, 448, 62, 4);
+  ctx.fillRect(166, 454, 62, 4);
+  // 门洞中（过道 ↔ Meeting Area）：x=458-516
+  ctx.fillStyle = PALETTE.doorOpen;
+  ctx.fillRect(458, 451, 58, 4);
+  ctx.fillStyle = PALETTE.doorFrame;
+  ctx.fillRect(454, 448, 66, 4);
+  ctx.fillRect(454, 454, 66, 4);
+  // 门洞右（过道 ↔ Lounge）：x=710-768
+  ctx.fillStyle = PALETTE.doorOpen;
+  ctx.fillRect(710, 451, 58, 4);
+  ctx.fillStyle = PALETTE.doorFrame;
+  ctx.fillRect(706, 448, 66, 4);
+  ctx.fillRect(706, 454, 66, 4);
 
-  // ── 垂直墙2：工位区 ↔ Boss Office（x=738）──
+  // ── 垂直墙3（下层）：Server Room ↔ Meeting（x=372，5px厚）──
   ctx.fillStyle = PALETTE.divWallDark;
-  ctx.fillRect(738, 108, 10, 340);
+  ctx.fillRect(372, 450, 5, 230);
   ctx.fillStyle = PALETTE.divWall;
-  ctx.fillRect(740, 108, 6, 340);
+  ctx.fillRect(373, 452, 3, 226);
   ctx.fillStyle = PALETTE.divWallLight;
-  ctx.fillRect(741, 108, 4, 340);
-  // 墙头横梁
-  ctx.fillStyle = PALETTE.divWallDark;
-  ctx.fillRect(735, 108, 16, 6);
-  // 门洞（工位区 ↔ Boss Office）
-  ctx.fillStyle = PALETTE.doorOpen;
-  ctx.fillRect(740, 180, 6, 65);
-  ctx.fillStyle = PALETTE.doorFrame;
-  ctx.fillRect(736, 178, 14, 5);
-  ctx.fillRect(736, 242, 14, 5);
-
-  // ── 水平墙：上方区域 ↔ 下方区域（y=448）──
-  ctx.fillStyle = PALETTE.divWallDark;
-  ctx.fillRect(0, 448, CANVAS_W, 10);
-  ctx.fillStyle = PALETTE.divWall;
-  ctx.fillRect(0, 450, CANVAS_W, 6);
-  ctx.fillStyle = PALETTE.divWallLight;
-  ctx.fillRect(0, 451, CANVAS_W, 4);
-  // 墙头横梁
-  ctx.fillStyle = PALETTE.divWallDark;
-  ctx.fillRect(0, 445, CANVAS_W, 5);
-  // 门洞左（Server Room ↔ 过道）：x=170-220
-  ctx.fillStyle = PALETTE.doorOpen;
-  ctx.fillRect(170, 450, 50, 6);
-  ctx.fillStyle = PALETTE.doorFrame;
-  ctx.fillRect(167, 446, 56, 5);
-  ctx.fillRect(167, 454, 56, 5);
-  // 门洞中（过道 ↔ Meeting Area）：x=460-510
-  ctx.fillStyle = PALETTE.doorOpen;
-  ctx.fillRect(460, 450, 50, 6);
-  ctx.fillStyle = PALETTE.doorFrame;
-  ctx.fillRect(457, 446, 56, 5);
-  ctx.fillRect(457, 454, 56, 5);
-  // 门洞右（过道 ↔ Lounge）：x=710-760
-  ctx.fillStyle = PALETTE.doorOpen;
-  ctx.fillRect(710, 450, 50, 6);
-  ctx.fillStyle = PALETTE.doorFrame;
-  ctx.fillRect(707, 446, 56, 5);
-  ctx.fillRect(707, 454, 56, 5);
-
-  // ── 垂直墙3（下层）：Server Room ↔ Meeting（x=368）──
-  ctx.fillStyle = PALETTE.divWallDark;
-  ctx.fillRect(368, 448, 10, 230);
-  ctx.fillStyle = PALETTE.divWall;
-  ctx.fillRect(370, 448, 6, 230);
-  ctx.fillStyle = PALETTE.divWallLight;
-  ctx.fillRect(371, 448, 4, 230);
+  ctx.fillRect(374, 454, 1, 222);
   // 门洞
   ctx.fillStyle = PALETTE.doorOpen;
-  ctx.fillRect(370, 558, 6, 44);
+  ctx.fillRect(373, 560, 4, 46);
   ctx.fillStyle = PALETTE.doorFrame;
-  ctx.fillRect(366, 556, 14, 5);
-  ctx.fillRect(366, 599, 14, 5);
+  ctx.fillRect(369, 558, 12, 4);
+  ctx.fillRect(369, 604, 12, 4);
 
-  // ── 垂直墙4（下层）：Meeting ↔ Lounge（x=718）──
+  // ── 垂直墙4（下层）：Meeting ↔ Lounge（x=720，5px厚）──
   ctx.fillStyle = PALETTE.divWallDark;
-  ctx.fillRect(718, 448, 10, 230);
+  ctx.fillRect(720, 450, 5, 230);
   ctx.fillStyle = PALETTE.divWall;
-  ctx.fillRect(720, 448, 6, 230);
+  ctx.fillRect(721, 452, 3, 226);
   ctx.fillStyle = PALETTE.divWallLight;
-  ctx.fillRect(721, 448, 4, 230);
+  ctx.fillRect(722, 454, 1, 222);
   // 门洞
   ctx.fillStyle = PALETTE.doorOpen;
-  ctx.fillRect(720, 558, 6, 44);
+  ctx.fillRect(721, 560, 4, 46);
   ctx.fillStyle = PALETTE.doorFrame;
-  ctx.fillRect(716, 556, 14, 5);
-  ctx.fillRect(716, 599, 14, 5);
+  ctx.fillRect(717, 558, 12, 4);
+  ctx.fillRect(717, 604, 12, 4);
+
+  // ── 贯通全宽踢脚线（衔接各区域）──
+  ctx.fillStyle = 'rgba(0,0,0,0.2)';
+  ctx.fillRect(0, 448, CANVAS_W, 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.15)';
+  ctx.fillRect(0, 455, CANVAS_W, 3);
+
+  // ── 分隔墙柔化光晕 ──
+  const wallGlowColor = 'rgba(192,176,152,0.12)';
+  const wallGlowBlur = 4;
+  // 垂直墙 x=740 光晕
+  ctx.shadowColor = 'rgba(192,176,152,0.2)';
+  ctx.shadowBlur = wallGlowBlur;
+  ctx.fillStyle = wallGlowColor;
+  ctx.fillRect(737, 108, 10, 340);
+  // 水平墙 y=450 光晕
+  ctx.fillRect(0, 446, CANVAS_W, 10);
+  // 垂直墙 x=372 光晕
+  ctx.fillRect(369, 450, 10, 230);
+  // 垂直墙 x=720 光晕
+  ctx.fillRect(717, 450, 10, 230);
+  ctx.shadowBlur = 0;
+
+  // ── 门洞过渡带（柔化区域边界）──
+  // 工位↔Boss 门洞
+  const doorGrad1 = ctx.createLinearGradient(738, 170, 747, 170);
+  doorGrad1.addColorStop(0, 'rgba(78,96,72,0.3)');
+  doorGrad1.addColorStop(0.5, 'rgba(58,42,26,0.3)');
+  doorGrad1.addColorStop(1, 'rgba(78,96,72,0.3)');
+  ctx.fillStyle = doorGrad1;
+  ctx.fillRect(738, 170, 9, 75);
+  // 水平门洞过渡
+  const doorH1 = ctx.createLinearGradient(170, 448, 170, 457);
+  doorH1.addColorStop(0, 'rgba(78,96,72,0.2)');
+  doorH1.addColorStop(0.5, 'rgba(20,24,30,0.15)');
+  doorH1.addColorStop(1, 'rgba(78,96,72,0.2)');
+  ctx.fillStyle = doorH1;
+  ctx.fillRect(170, 448, 54, 9);
+  ctx.fillRect(458, 448, 58, 9);
+  ctx.fillRect(710, 448, 58, 9);
+  // 下层门洞过渡
+  const doorV3 = ctx.createLinearGradient(370, 560, 379, 560);
+  doorV3.addColorStop(0, 'rgba(20,24,30,0.2)');
+  doorV3.addColorStop(0.5, 'rgba(58,66,80,0.2)');
+  doorV3.addColorStop(1, 'rgba(20,24,30,0.2)');
+  ctx.fillStyle = doorV3;
+  ctx.fillRect(370, 560, 9, 46);
+  const doorV4 = ctx.createLinearGradient(718, 560, 727, 560);
+  doorV4.addColorStop(0, 'rgba(58,66,80,0.2)');
+  doorV4.addColorStop(0.5, 'rgba(58,42,32,0.2)');
+  doorV4.addColorStop(1, 'rgba(58,66,80,0.2)');
+  ctx.fillStyle = doorV4;
+  ctx.fillRect(718, 560, 9, 46);
 
   // ── 过道地面（墙体之间的通道）──
   ctx.fillStyle = PALETTE.aisle;
-  ctx.fillRect(10, 441, 360, 14);
-  ctx.fillRect(378, 441, 340, 14);
-  ctx.fillRect(728, 441, 262, 14);
+  ctx.fillRect(10, 443, 358, 13);
+  ctx.fillRect(380, 443, 338, 13);
+  ctx.fillRect(728, 443, 262, 13);
 
   // ── 过道边缘阴影 ──
   ctx.fillStyle = PALETTE.floorEdge;
-  ctx.fillRect(10, 455, 360, 3);
-  ctx.fillRect(378, 455, 340, 3);
-  ctx.fillRect(728, 455, 262, 3);
+  ctx.fillRect(10, 456, 358, 2);
+  ctx.fillRect(380, 456, 338, 2);
+  ctx.fillRect(728, 456, 262, 2);
 
   // ══════════════════════════════════════
   //  绘制各区域内容
   // ══════════════════════════════════════
 
-  // ═══════════ 左上：Dashboard（放大2×，贴左上角 x=10~260, y=4~444）══════════
-  drawDashboard(ctx, 10, 4, 248, 440);
+  // ═══════════ 左上：接待区 ═══════════
+  drawReception(ctx, 16, 114, 230, 315);
 
   // ═══════════ 中部：6工位 3×2 ═══════════
   DESK_CONFIGS.forEach(cfg => {
@@ -575,7 +776,6 @@ const animTimers = {
   coffeeSteam: 0,
   waterBubble: 0,
   treadmillBelt: 0,
-  dashboardPulse: 0,
 };
 
 function drawAnimationLayer(ctx, dt, agents) {
@@ -587,7 +787,6 @@ function drawAnimationLayer(ctx, dt, agents) {
   animTimers.coffeeSteam += dt * 30;
   animTimers.waterBubble += dt * 40;
   animTimers.treadmillBelt += dt * 20;
-  animTimers.dashboardPulse += dt * 30;
 
   // 屏幕代码滚动（各工位显示器）
   DESK_CONFIGS.forEach(cfg => {
@@ -616,234 +815,109 @@ function drawAnimationLayer(ctx, dt, agents) {
 
   // 跑步机跑带
   drawTreadmillBelt(ctx, animTimers.treadmillBelt);
-
-  // Dashboard 呼吸灯
-  drawDashboardPulse(ctx, animTimers.dashboardPulse);
-
-  // 黑板角色状态卡（2×2）
-  if (agents) drawDashboardCards(ctx, agents);
 }
 
-// ═══════════════════════ Dashboard：黑板风格 ═══════════════════════
-// 248×440 木框黑板，贴左上角 (10, 4)
-function drawDashboard(ctx, x, y, w, h) {
-  // 木框外壳（深色外框）
-  ctx.fillStyle = '#5a3620';
-  ctx.beginPath(); ctx.roundRect(x - 4, y - 4, w + 8, h + 8, 10); ctx.fill();
-  // 木框中层
-  ctx.fillStyle = '#8B6914';
-  ctx.beginPath(); ctx.roundRect(x - 2, y - 2, w + 4, h + 4, 8); ctx.fill();
-  // 木框内层
-  ctx.fillStyle = '#A0782C';
-  ctx.beginPath(); ctx.roundRect(x, y, w, h, 6); ctx.fill();
-  // 框内侧阴影
-  ctx.fillStyle = '#3a2010';
-  ctx.fillRect(x + 4, y + 4, w - 8, 2);
-  ctx.fillRect(x + 4, y + 4, 2, h - 8);
-  ctx.fillRect(x + w - 6, y + 4, 2, h - 8);
-  ctx.fillRect(x + 4, y + h - 6, w - 8, 2);
-
-  // 黑板面（深墨绿色）
-  const boardX = x + 12, boardY = y + 12, boardW = w - 24, boardH = h - 24;
-  ctx.fillStyle = '#1e3a1e';
-  ctx.fillRect(boardX, boardY, boardW, boardH);
-  // 黑板纹理（轻微噪点）
-  ctx.fillStyle = 'rgba(255,255,255,0.03)';
-  for (let bx = boardX; bx < boardX + boardW; bx += 8) {
-    for (let by = boardY; by < boardY + boardH; by += 8) {
-      if (Math.random() > 0.5) ctx.fillRect(bx, by, 6, 6);
-    }
-  }
-
-  // 粉笔槽（底部木条）
-  ctx.fillStyle = '#6B4914';
-  ctx.fillRect(x + 8, y + h - 18, w - 16, 12);
-  ctx.fillStyle = '#8B6914';
-  ctx.fillRect(x + 8, y + h - 18, w - 16, 3);
-  // 粉笔
-  ctx.fillStyle = '#fffef0';
-  ctx.fillRect(x + 20, y + h - 14, 14, 4);
-  ctx.fillRect(x + 38, y + h - 14, 10, 4);
-  ctx.fillStyle = '#ffdd88';
-  ctx.fillRect(x + 54, y + h - 14, 12, 4);
-  ctx.fillStyle = '#ff8a80';
-  ctx.fillRect(x + 72, y + h - 14, 8, 4);
-  // 黑板擦
-  ctx.fillStyle = '#8B6914';
-  ctx.fillRect(x + w - 50, y + h - 16, 30, 8);
-  ctx.fillStyle = '#ccc';
-  ctx.fillRect(x + w - 48, y + h - 15, 26, 6);
-
-  // === 粉笔标题 ===
-  ctx.font = '12px "Press Start 2P"';
-  ctx.fillStyle = '#f8f8e8';
+// ═══════════════════════ 接待区 ═══════════════════════
+function drawReception(ctx, x, y, w, h) {
+  // ── 墙上标牌 ──
+  ctx.fillStyle = '#FFD700';
+  ctx.fillRect(x + 30, y + 4, 110, 20);
+  ctx.fillStyle = '#1a1a1a';
+  ctx.font = '8px "Press Start 2P"';
   ctx.textAlign = 'center';
-  ctx.fillText('团队看板', x + w / 2, boardY + 28);
+  ctx.fillText('RECEPTION', x + 85, y + 18);
 
-  // 标题下划线
-  ctx.fillStyle = '#f8f8e8';
-  ctx.fillRect(x + w / 2 - 55, boardY + 34, 110, 2);
+  // ── 前台柜台 ──
+  ctx.fillStyle = '#6b4a30';
+  ctx.fillRect(x + 14, y + 44, 140, 34);
+  ctx.fillStyle = '#8B6914';
+  ctx.fillRect(x + 14, y + 44, 140, 6);
+  // 前面板
+  ctx.fillStyle = '#5a3520';
+  ctx.fillRect(x + 14, y + 78, 140, 12);
+  // 台面装饰线
+  ctx.fillStyle = '#A0782C';
+  ctx.fillRect(x + 14, y + 48, 140, 2);
 
-  // 副标题
-  ctx.font = '7px "Press Start 2P"';
-  ctx.fillStyle = 'rgba(255,255,240,0.6)';
-  ctx.fillText('状态报告', x + w / 2, boardY + 50);
+  // ── 前台电脑 ──
+  ctx.fillStyle = PALETTE.monitorFrame;
+  ctx.fillRect(x + 44, y + 16, 38, 30);
+  ctx.fillStyle = '#0a1628';
+  ctx.fillRect(x + 46, y + 18, 34, 26);
+  ctx.fillStyle = '#67C23A';
+  ctx.fillRect(x + 50, y + 22, 8, 2);
+  ctx.fillRect(x + 50, y + 28, 16, 2);
 
-  // === 4个角色卡片占位（2×2）===
-  // 卡片由 drawDashboardCards() 动态绘制
-  // 这里画占位虚线框
-  const cardW = 90, cardH = 120;
-  const startCX = boardX + 14, startCY = boardY + 60;
-  const gapX = 10, gapY = 14;
+  // ── 前台座椅 ──
+  ctx.fillStyle = '#3a3a4a';
+  ctx.fillRect(x + 52, y + 90, 30, 14);
+  ctx.fillStyle = '#4a4a5a';
+  ctx.fillRect(x + 50, y + 86, 34, 6);
 
-  [
-    { col: 0, row: 0 },  // CX (左上)
-    { col: 1, row: 0 },  // CC (右上)
-    { col: 0, row: 1 },  // 小马 (左下)
-    { col: 1, row: 1 },  // Hermes (右下)
-  ].forEach(({ col, row }) => {
-    const cx = startCX + col * (cardW + gapX);
-    const cy = startCY + row * (cardH + gapY);
-    // 虚线框
-    ctx.strokeStyle = 'rgba(255,255,240,0.15)';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([4, 4]);
-    ctx.strokeRect(cx, cy, cardW, cardH);
-    ctx.setLineDash([]);
-  });
+  // ── 电话 ──
+  ctx.fillStyle = '#333';
+  ctx.fillRect(x + 124, y + 38, 14, 10);
+  ctx.fillStyle = '#444';
+  ctx.fillRect(x + 126, y + 40, 10, 6);
 
-  // 粉笔日期
-  ctx.font = '6px "Press Start 2P"';
-  ctx.fillStyle = 'rgba(255,255,240,0.4)';
-  ctx.textAlign = 'end';
-  const d = new Date();
-  ctx.fillText(
-    `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`,
-    x + w - 20, boardY + 46
-  );
+  // ── 签到本 ──
+  ctx.fillStyle = '#f5f0e9';
+  ctx.fillRect(x + 116, y + 52, 16, 10);
+  ctx.fillStyle = '#333';
+  ctx.fillRect(x + 118, y + 54, 2, 6);
+
+  // ── 等待区沙发 ──
+  ctx.fillStyle = '#5a3525';
+  ctx.fillRect(x + 6, y + 135, 90, 34);
+  ctx.fillStyle = '#6b4535';
+  ctx.fillRect(x + 4, y + 131, 94, 8);
+  // 坐垫
+  ctx.fillStyle = '#7a5545';
+  ctx.fillRect(x + 12, y + 143, 34, 16);
+  ctx.fillStyle = '#7a5545';
+  ctx.fillRect(x + 54, y + 143, 34, 16);
+  // 靠垫
+  ctx.fillStyle = '#4A90D9';
+  ctx.fillRect(x + 16, y + 137, 12, 8);
+  ctx.fillStyle = '#67C23A';
+  ctx.fillRect(x + 58, y + 137, 12, 8);
+
+  // ── 茶几 ──
+  ctx.fillStyle = '#6b4a30';
+  ctx.fillRect(x + 94, y + 152, 34, 14);
+  ctx.fillStyle = '#8B6914';
+  ctx.fillRect(x + 94, y + 152, 34, 3);
+  // 杂志
+  ctx.fillStyle = '#E6A23C';
+  ctx.fillRect(x + 104, y + 146, 12, 8);
+
+  // ── 饮水机 ──
+  drawWaterDispenser(ctx, x + 168, y + 80);
+
+  // ── 绿植 ──
+  drawPlant(ctx, x + 180, y + 155);
+
+  // ── 公告栏 ──
+  ctx.fillStyle = '#e8e4dc';
+  ctx.fillRect(x + 142, y + 18, 58, 50);
+  ctx.strokeStyle = '#8B7355';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(x + 142, y + 18, 58, 50);
+  ctx.fillStyle = '#4A90D9';
+  ctx.fillRect(x + 148, y + 24, 14, 3);
+  ctx.fillStyle = '#F56C6C';
+  ctx.fillRect(x + 148, y + 30, 20, 3);
+  ctx.fillRect(x + 148, y + 36, 8, 3);
+
+  // ── 盆栽（大）──
+  ctx.fillStyle = '#8B4513';
+  ctx.fillRect(x + 192, y + 94, 14, 20);
+  ctx.fillStyle = '#3a8a4a';
+  ctx.fillRect(x + 186, y + 80, 26, 16);
+  ctx.fillStyle = '#4aaa5a';
+  ctx.fillRect(x + 190, y + 84, 18, 10);
+
   ctx.textAlign = 'start';
-}
-
-// 黑板呼吸动画（轻微微光）
-function drawDashboardPulse(ctx, phase) {
-  const alpha = 0.03 + Math.sin(phase * 0.5) * 0.02;
-  ctx.fillStyle = `rgba(255,255,200,${alpha})`;
-  ctx.fillRect(22, 16, 220, 416);
-}
-
-// ═══════════════════════ 动态角色状态卡 ═══════════════════════
-function drawDashboardCards(ctx, agents) {
-  const boardX = 22, boardY = 16;
-  const cardW = 90, cardH = 120;
-  const startCX = boardX + 14, startCY = boardY + 60;
-  const gapX = 10, gapY = 14;
-
-  const cardOrder = ['cx', 'cc', 'xiaoma', 'hermes'];
-
-  cardOrder.forEach((agentId, idx) => {
-    const col = idx % 2, row = Math.floor(idx / 2);
-    const cx = startCX + col * (cardW + gapX);
-    const cy = startCY + row * (cardH + gapY);
-
-    const agent = agents[agentId];
-    const theme = AGENT_THEMES[agentId] || '#aaa';
-    const status = agent ? agent.status : 'offline';
-    const statusText = {
-      working: '工作中', idle: '空闲中', talking: '讨论中',
-      error: '异常', offline: '离线',
-    }[status] || status.toUpperCase();
-    // 状态颜色：空闲=绿，工作中=黄，异常=红，离线=灰
-    const statusColor = {
-      working: '#FFD700', idle: '#44ff44', talking: '#44aaff',
-      error: '#ff4444', offline: '#888',
-    }[status] || '#888';
-
-    // 卡片底板
-    ctx.fillStyle = 'rgba(0,0,0,0.3)';
-    ctx.fillRect(cx - 1, cy - 1, cardW + 2, cardH + 2);
-    ctx.fillStyle = 'rgba(25,25,25,0.7)';
-    ctx.fillRect(cx, cy, cardW, cardH);
-    ctx.strokeStyle = theme;
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(cx, cy, cardW, cardH);
-
-    // 像素头像（小）
-    const grid = GRID_REGISTRY[agentId];
-    if (grid) {
-      const avatarSize = 3; // 缩小像素头像
-      const avatarCX = cx + cardW / 2;
-      const avatarCY = cy + 30;
-      for (let r = 0; r < grid.length; r++) {
-        for (let c = 0; c < grid[r].length; c++) {
-          const val = grid[r][c];
-          if (val === 0) continue;
-          ctx.fillStyle = COLOR_MAP[val] || COLOR_MAP[1];
-          ctx.fillRect(
-            avatarCX - (grid[0].length * avatarSize) / 2 + c * avatarSize,
-            avatarCY - 18 + r * avatarSize,
-            avatarSize, avatarSize
-          );
-        }
-      }
-    }
-
-    // 姓名
-    const nameMap = { cx: 'CX', cc: 'CC', xiaoma: '\u5C0F\u9A6C', hermes: 'Hermes' };
-    ctx.font = '8px "Press Start 2P"';
-    ctx.fillStyle = '#f8f8e8';
-    ctx.textAlign = 'center';
-    ctx.fillText(nameMap[agentId] || agentId, cx + cardW / 2, cy + 54);
-
-    // 角色
-    const roleMap = { cx: '\u4EE3\u7801\u5DE5\u7A0B\u5E08', cc: '\u8F6F\u4EF6\u67B6\u6784\u5E08', xiaoma: '\u9879\u76EE\u7ECF\u7406', hermes: '\u6280\u672F\u4E3B\u7BA1' };
-    ctx.font = '5px "Press Start 2P"';
-    ctx.fillStyle = 'rgba(255,255,240,0.5)';
-    ctx.fillText(roleMap[agentId] || '', cx + cardW / 2, cy + 66);
-
-    // 状态指示灯
-    ctx.fillStyle = statusColor;
-    ctx.beginPath();
-    ctx.arc(cx + 14, cy + 82, 5, 0, Math.PI * 2);
-    ctx.fill();
-    // 光晕
-    ctx.fillStyle = statusColor.replace(')', ',0.4)').replace('rgb', 'rgba');
-    if (statusColor.startsWith('#')) {
-      ctx.fillStyle = statusColor + '66';
-    }
-    ctx.beginPath();
-    ctx.arc(cx + 14, cy + 82, 8, 0, Math.PI * 2);
-    ctx.fill();
-
-    // 状态文本（含任务步骤）
-    ctx.font = '6px "Press Start 2P"';
-    ctx.fillStyle = statusColor;
-    ctx.textAlign = 'start';
-    let displayStatus = statusText;
-    if (status === 'working' && agent && agent.activity) {
-      const step = agent.activity.length > 8 ? agent.activity.substring(0, 8) + '..' : agent.activity;
-      displayStatus = `${statusText}:${step}`;
-    }
-    ctx.fillText(displayStatus, cx + 24, cy + 85);
-
-    // 进度条（工作中）
-    if (status === 'working' && agent && agent.progress > 0) {
-      ctx.fillStyle = 'rgba(255,255,255,0.1)';
-      ctx.fillRect(cx + 6, cy + 96, cardW - 12, 6);
-      ctx.fillStyle = statusColor;
-      ctx.fillRect(cx + 6, cy + 96, (cardW - 12) * agent.progress / 100, 6);
-      ctx.font = '5px "Press Start 2P"';
-      ctx.fillStyle = '#fff';
-      ctx.textAlign = 'center';
-      ctx.fillText(Math.round(agent.progress) + '%', cx + cardW / 2, cy + 114);
-    } else if (status === 'offline') {
-      ctx.font = '5px "Press Start 2P"';
-      ctx.fillStyle = '#666';
-      ctx.textAlign = 'center';
-      ctx.fillText('(离线)', cx + cardW / 2, cy + 106);
-    }
-
-    ctx.textAlign = 'start';
-  });
 }
 
 // ═══════════════════════ 工位 ═══════════════════════
@@ -921,6 +995,86 @@ function drawWorkstation(ctx, x, y, w, h, cfg, occupiedBy) {
     ctx.fillRect(x + w - 20, y + 8, 10, 8);
     ctx.fillStyle = '#cc99ff';
     ctx.fillRect(x + w - 18, y + 10, 6, 4);
+  } else if (cfg.id === 'emptyA') {
+    // ── 空位A → 3D打印工坊 ──
+    // 3D打印机主体
+    ctx.fillStyle = '#555';
+    ctx.fillRect(x + 12, y + 2, 54, 40);
+    ctx.fillStyle = '#777';
+    ctx.fillRect(x + 14, y + 4, 50, 22);
+    // 打印仓
+    ctx.fillStyle = '#444';
+    ctx.fillRect(x + 16, y + 6, 46, 18);
+    // LED进度条
+    ctx.fillStyle = '#ff6b6b';
+    ctx.fillRect(x + 18, y + 28, 42, 4);
+    ctx.fillStyle = '#00ff88';
+    ctx.fillRect(x + 18, y + 28, 28, 4);
+    // 挤出丝
+    ctx.fillStyle = '#f5c542';
+    ctx.fillRect(x + 34, y + 8, 2, 10);
+    // 线轴
+    ctx.fillStyle = '#444';
+    ctx.fillRect(x + 16, y + 36, 8, 8);
+    ctx.fillStyle = '#c0c0c0';
+    ctx.fillRect(x + 17, y + 37, 6, 6);
+    // 打印样品
+    ctx.fillStyle = '#f5c542';
+    ctx.fillRect(x + 52, y + 36, 10, 10);
+    ctx.fillStyle = '#e8b830';
+    ctx.fillRect(x + 53, y + 37, 8, 8);
+    // 线材架
+    ctx.fillStyle = '#555';
+    ctx.fillRect(x + 80, y + 14, 24, 30);
+    ctx.fillStyle = '#c0c0c0';
+    ctx.fillRect(x + 82, y + 10, 6, 12);
+    ctx.fillRect(x + 92, y + 12, 6, 12);
+    // 标签
+    ctx.font = '6px "Press Start 2P"';
+    ctx.fillStyle = '#f59e0b';
+    ctx.textAlign = 'center';
+    ctx.fillText('3D LAB', x + w / 2, y + h + 44);
+    ctx.textAlign = 'start';
+  } else if (cfg.id === 'emptyB') {
+    // ── 空位B → 咖啡吧台 ──
+    // 吧台
+    ctx.fillStyle = '#4a3a2a';
+    ctx.fillRect(x + 8, y + 12, 58, 35);
+    ctx.fillStyle = '#6b5344';
+    ctx.fillRect(x + 8, y + 12, 58, 6);
+    // 意式咖啡机
+    ctx.fillStyle = '#333';
+    ctx.fillRect(x + 12, y - 4, 30, 20);
+    ctx.fillStyle = '#555';
+    ctx.fillRect(x + 14, y - 2, 26, 14);
+    ctx.fillStyle = '#888';
+    ctx.fillRect(x + 16, y, 22, 8);
+    // 压力表
+    ctx.fillStyle = '#eee';
+    ctx.fillRect(x + 18, y + 2, 6, 6);
+    ctx.fillStyle = '#44ff44';
+    ctx.fillRect(x + 20, y + 4, 2, 2);
+    // 杯架
+    ctx.fillStyle = '#c0c0c0';
+    ctx.fillRect(x + 18, y + 16, 6, 10);
+    ctx.fillRect(x + 28, y + 14, 6, 10);
+    ctx.fillRect(x + 38, y + 16, 6, 10);
+    // 糖罐
+    ctx.fillStyle = '#e8d5c4';
+    ctx.fillRect(x + 48, y + 18, 10, 10);
+    ctx.fillStyle = '#ddd';
+    ctx.fillRect(x + 50, y + 16, 6, 4);
+    // 小绿植
+    ctx.fillStyle = '#6b4226';
+    ctx.fillRect(x + 64, y + 20, 8, 10);
+    ctx.fillStyle = '#2d8b4a';
+    ctx.fillRect(x + 62, y + 14, 12, 8);
+    // 标签
+    ctx.font = '6px "Press Start 2P"';
+    ctx.fillStyle = '#d97706';
+    ctx.textAlign = 'center';
+    ctx.fillText('CAFE', x + w / 2, y + h + 44);
+    ctx.textAlign = 'start';
   }
 
   // 标签
@@ -1325,13 +1479,30 @@ function drawMeetingArea(ctx, x, y, w, h) {
   // 白板擦
   ctx.fillStyle = '#666';
   ctx.fillRect(x + 34, y + 122, 20, 6);
-  // 白板内容
-  ctx.fillStyle = '#4A90D9';
-  ctx.fillRect(x + 14, y + 56, 20, 2);
-  ctx.fillStyle = '#67C23A';
-  ctx.fillRect(x + 14, y + 62, 30, 2);
-  ctx.fillStyle = '#F56C6C';
-  ctx.fillRect(x + 14, y + 68, 16, 2);
+  // 白板内容（像素风看板）
+  const boardCards = [
+    { bx: 14, by: 56, bw: 14, bh: 8, bc: '#F56C6C' },  // 紧急
+    { bx: 30, by: 58, bw: 16, bh: 6, bc: '#E6A23C' },  // 进行中
+    { bx: 14, by: 66, bw: 10, bh: 10, bc: '#67C23A' },  // 已完成
+    { bx: 28, by: 68, bw: 18, bh: 8, bc: '#4A90D9' },  // 待办
+    { bx: 14, by: 78, bw: 12, bh: 6, bc: '#E6A23C' },  // 进行中
+    { bx: 28, by: 80, bw: 14, bh: 8, bc: '#F56C6C' },  // 紧急
+    { bx: 14, by: 88, bw: 18, bh: 8, bc: '#67C23A' },  // 已完成
+    { bx: 34, by: 90, bw: 10, bh: 6, bc: '#9B59B6' },  // 讨论
+  ];
+  boardCards.forEach(c => {
+    ctx.fillStyle = c.bc;
+    ctx.fillRect(x + c.bx, y + c.by, c.bw, c.bh);
+  });
+  // 时间线
+  ctx.fillStyle = '#999';
+  ctx.fillRect(x + 14, y + 100, 40, 1);
+  ctx.fillRect(x + 14, y + 110, 40, 1);
+  // 里程碑点
+  ctx.fillStyle = '#FFD700';
+  ctx.fillRect(x + 18, y + 99, 4, 3);
+  ctx.fillRect(x + 38, y + 99, 4, 3);
+  ctx.fillRect(x + 48, y + 109, 4, 3);
 
   // ── 会议桌（大椭圆）──
   ctx.fillStyle = PALETTE.meetingTable;
@@ -1707,10 +1878,19 @@ function drawAnimatedClock(ctx, minutePhase, hourPhase) {
 // ═══════════════════════ 天花板灯 ═══════════════════════
 function drawCeilingLights(ctx) {
   for (let lx = 60; lx < CANVAS_W; lx += 180) {
-    ctx.fillStyle = 'rgba(255,255,200,0.08)';
-    ctx.fillRect(lx, 0, 60, 8);
-    ctx.fillStyle = 'rgba(255,255,200,0.04)';
-    ctx.fillRect(lx + 2, 8, 56, 24);
+    // 灯管本体（暖黄渐变）
+    const grad = ctx.createLinearGradient(lx, 2, lx + 50, 10);
+    grad.addColorStop(0, '#fff8e0');
+    grad.addColorStop(0.5, '#fff0c0');
+    grad.addColorStop(1, '#ffcc80');
+    ctx.fillStyle = grad;
+    ctx.fillRect(lx, 4, 50, 8);
+    // 灯管下方光晕
+    const glow = ctx.createRadialGradient(lx + 25, 50, 5, lx + 25, 50, 55);
+    glow.addColorStop(0, 'rgba(255,248,224,0.06)');
+    glow.addColorStop(1, 'rgba(255,248,224,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(lx - 20, 10, 90, 80);
   }
 }
 
@@ -1892,59 +2072,87 @@ function drawLaptopOnDesk(ctx, deskId) {
 }
 
 // ═══════════════════════ 气泡绘制 ═══════════════════════
-const BUBBLE_ICONS = {
-  working: '\u2699',
-  talking: '\uD83D\uDCAC',
-  error:    '\uD83D\uDC1B',
-  idle:     '\uD83D\uDCA4',
-};
-
-const BUBBLE_COLORS = {
-  working: { bg: '#1a2a3a', border: '#4A90D9', glow: 'rgba(74,144,217,0.3)' },
-  talking: { bg: '#1a3a1a', border: '#67C23A', glow: 'rgba(103,194,58,0.3)' },
-  error:   { bg: '#3a1a1a', border: '#F56C6C', glow: 'rgba(245,108,108,0.4)' },
-  idle:    { bg: '#1a2a1a', border: '#44ff44', glow: 'rgba(68,255,68,0.15)' },
+// ═══════════════════════ 气泡绘制 ═══════════════════════
+const BUBBLE_CONFIG = {
+  working:   { icon: '\u2699', color: '#f59e0b', bg: '#92400e', label: 'Working' },
+  idle:      { icon: '\u2600', color: '#34d399', bg: '#065f46', label: 'Idle' },
+  talking:   { icon: '\ud83d\udcac', color: '#a78bfa', bg: '#4c1d95', label: 'Talking' },
+  thinking:  { icon: '\ud83e\udd14', color: '#7dd3fc', bg: '#1e3a5f', label: 'Thinking' },
+  error:     { icon: '\ud83d\udc1b', color: '#f87171', bg: '#7f1d1d', label: 'Error' },
+  offline:   { icon: '\u26f6', color: '#6b7280', bg: '#374151', label: 'Offline' },
 };
 
 function drawBubble(ctx, agent, x, y) {
-  // 气泡只在空闲/讨论时显示，不显示工作细节
-  if (agent.status !== 'idle' && agent.status !== 'talking') return;
-  const text = agent.activity || (agent.status === 'idle' ? '等任务...' : '');
-  if (!text) return;
+  // offline 不显示气泡
+  if (agent.status === 'offline') return;
 
-  const icon = agent.status === 'talking' ? BUBBLE_ICONS.talking : BUBBLE_ICONS.idle;
-  const colors = agent.status === 'talking' ? BUBBLE_COLORS.talking : BUBBLE_COLORS.idle;
+  const cfg = BUBBLE_CONFIG[agent.status] || BUBBLE_CONFIG.idle;
+  const maxW = 160;
+  const pH = 12;
 
-  const displayText = `${icon} ${text}`;
+  // 第一行：图标 + activity
+  const line1 = cfg.icon + ' ' + (agent.activity || cfg.label);
+  // 第二行：模型名（截断）
+  const modelName = agent.model || '';
+  const line2 = modelName.length > 20 ? modelName.slice(0, 19) + '\u2026' : modelName;
 
-  ctx.font = '11px "Press Start 2P"';
-  const textWidth = ctx.measureText(displayText).width;
-  const bubbleW = Math.max(textWidth + 24, 80);
-  const bubbleH = 28;
-  const bx = x - bubbleW / 2 + 45;
-  const by = y;
+  ctx.save();
+  ctx.font = '8px "Courier New", monospace';
 
-  ctx.shadowColor = colors.glow;
-  ctx.shadowBlur = 6;
+  const l1w = ctx.measureText(line1).width;
+  const l2w = ctx.measureText(line2).width;
+  const textW = Math.min(Math.max(l1w, l2w) + 12, maxW);
+  const textH = line2 ? 40 : 30;
 
-  ctx.fillStyle = colors.bg;
-  ctx.strokeStyle = colors.border;
-  ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.roundRect(bx, by, bubbleW, bubbleH, 6); ctx.fill(); ctx.stroke();
+  // 背景
+  const bx = x - 8;
+  const by = y - textH - 4;
+  const bw = textW + 8;
+  const bh = textH;
 
-  ctx.shadowBlur = 0;
-
-  ctx.fillStyle = colors.bg;
+  ctx.fillStyle = cfg.bg;
+  ctx.globalAlpha = 0.85;
   ctx.beginPath();
-  ctx.moveTo(bx + bubbleW / 2 - 6, by + bubbleH);
-  ctx.lineTo(bx + bubbleW / 2, by + bubbleH + 8);
-  ctx.lineTo(bx + bubbleW / 2 + 6, by + bubbleH);
+  const radius = 6;
+  ctx.moveTo(bx + radius, by);
+  ctx.lineTo(bx + bw - radius, by);
+  ctx.quadraticCurveTo(bx + bw, by, bx + bw, by + radius);
+  ctx.lineTo(bx + bw, by + bh - radius);
+  ctx.quadraticCurveTo(bx + bw, by + bh, bx + bw - radius, by + bh);
+  ctx.lineTo(bx + radius, by + bh);
+  ctx.quadraticCurveTo(bx, by + bh, bx, by + bh - radius);
+  ctx.lineTo(bx, by + radius);
+  ctx.quadraticCurveTo(bx, by, bx + radius, by);
+  ctx.closePath();
   ctx.fill();
+  ctx.globalAlpha = 1;
 
-  ctx.fillStyle = '#FFFFFF';
-  ctx.fillText(displayText, bx + 12, by + 18);
+  // 第一行文字
+  ctx.fillStyle = cfg.color;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText(line1, bx + 4, by + 5);
+
+  // 第二行文字
+  if (line2) {
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.font = '7px "Courier New", monospace';
+    ctx.fillText(line2, bx + 4, by + 19);
+  }
+
+  // 指示器三角
+  ctx.fillStyle = cfg.bg;
+  ctx.globalAlpha = 0.85;
+  ctx.beginPath();
+  ctx.moveTo(x - 6, y);
+  ctx.lineTo(x + 6, y);
+  ctx.lineTo(x, y + 6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.globalAlpha = 1;
+
+  ctx.restore();
 }
-
 function drawCircularProgress(ctx, cx, cy, radius, percent, color) {
   ctx.beginPath();
   ctx.arc(cx, cy, radius, 0, Math.PI * 2);

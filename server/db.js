@@ -67,6 +67,14 @@ export async function initDB() {
     // 列已存在，忽略
   }
 
+  // 迁移：给 agents 表加 model 列
+  try {
+    db.run(`ALTER TABLE agents ADD COLUMN model TEXT DEFAULT ''`);
+    console.log('[DB] 迁移：已添加 model 列');
+  } catch {
+    // 列已存在，忽略
+  }
+
   db.run(`CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(channel)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_messages_channel_time ON messages(channel, created_at)`);
@@ -101,17 +109,17 @@ export async function initDB() {
   // 插入初始 Agent 数据
   const now = Date.now();
   const agents = [
-    ['cc', 'CC', 'agent', '#4A90D9', 'grids/clawd.js', now],
-    ['cx', 'CX', 'agent', '#10A37F', 'grids/cx.js', now],
-    ['xiaoma', '小马', 'agent', '#E6A23C', 'grids/marvis.js', now],
-    ['hermes', 'Hermes', 'agent', '#9B59B6', 'grids/hermes.js', now],
-    ['kk', 'KK', 'human', '#FFD700', null, now],
+    ['cc', 'CC', 'agent', '#4A90D9', 'grids/clawd.js', 'DeepSeek 4.0 Pro', now],
+    ['cx', 'CX', 'agent', '#10A37F', 'grids/cx.js', 'Gemini 3 Flash', now],
+    ['xiaoma', '小马', 'agent', '#E6A23C', 'grids/marvis.js', 'MiMo v2.5 Pro', now],
+    ['hermes', 'Hermes', 'agent', '#9B59B6', 'grids/hermes.js', 'Claude 4 Opus', now],
+    ['kk', 'KK', 'human', '#FFD700', null, '', now],
   ];
 
-  agents.forEach(([id, name, type, color, grid, ts]) => {
+  agents.forEach(([id, name, type, color, grid, model, ts]) => {
     db.run(
-      `INSERT OR IGNORE INTO agents (id, name, agent_type, color, grid_file, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-      [id, name, type, color, grid, ts]
+      `INSERT OR IGNORE INTO agents (id, name, agent_type, color, grid_file, model, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [id, name, type, color, grid, model, ts]
     );
   });
 

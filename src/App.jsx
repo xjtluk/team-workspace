@@ -68,12 +68,15 @@ export function App() {
         </div>
       )}
       <div class="workspace-left">
-        <PixelOffice agents={agents} onHoverDesk={handleHoverDesk} />
-        <InfoPanel
-          hoverTarget={hoverSignal.value.target}
-          agents={agents}
-          visible={hoverSignal.value.visible}
-        />
+        <div class="workspace-canvas">
+          <PixelOffice agents={agents} onHoverDesk={handleHoverDesk} />
+          <InfoPanel
+            hoverTarget={hoverSignal.value.target}
+            agents={agents}
+            visible={hoverSignal.value.visible}
+          />
+        </div>
+        <StatusBar agents={agents} wsConnected={wsConnected} />
       </div>
       <ResizeHandle />
       <div class="workspace-right">
@@ -86,7 +89,6 @@ export function App() {
           onSwitchChannel={switchChannel}
         />
       </div>
-      <StatusBar agents={agents} wsConnected={wsConnected} />
     </div>
   );
 }

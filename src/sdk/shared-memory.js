@@ -25,7 +25,10 @@ export async function getFullMemory(limit = 30) {
     const lines = messages.map(m => {
       const time = new Date(m.timestamp).toISOString().substring(11, 16); // HH:MM
       const name = m.fromName || m.from;
-      return `[${time}] ${name}: ${m.content}`;
+      const content = typeof m.content === 'string' && m.content.length > 300
+        ? m.content.substring(0, 300) + '...'
+        : m.content;
+      return `[${time}] ${name}: ${content}`;
     });
 
     return '=== 最近群聊记录 ===\n' + lines.join('\n');

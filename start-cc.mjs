@@ -9,12 +9,30 @@
  */
 
 // ✅ 修复 3.3：添加 dotenv 支持，确保 .env 作为 fallback
+// 手动加载 .env（dotenv ESM import 在 watchdog spawn 环境下可能不加载变量）
 try {
-  const dotenv = await import('dotenv');
-  dotenv.config();
-  console.log('[CC] ✅ 已加载 .env 配置');
+  const { readFileSync } = await import('fs');
+  const { join, dirname } = await import('path');
+  const { fileURLToPath } = await import('url');
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+  const envContent = readFileSync(join(__dirname, '.env'), 'utf8');
+  let loaded = 0;
+  for (const line of envContent.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eqIdx = trimmed.indexOf('=');
+    if (eqIdx === -1) continue;
+    const key = trimmed.slice(0, eqIdx).trim();
+    let val = trimmed.slice(eqIdx + 1).trim();
+    // 去掉引号包裹的值：KEY="value" → value, KEY='value' → value
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+      val = val.slice(1, -1);
+    }
+    if (!process.env[key]) { process.env[key] = val; loaded++; }
+  }
+  console.log(`[CC] ✅ 已手动加载 .env 配置 (${loaded} 个变量)`);
 } catch {
-  console.log('[CC] ℹ️ dotenv 未安装，跳过 .env 加载');
+  console.log('[CC] ⚠️ 无法加载 .env 文件');
 }
 
 // 从 Claude 配置加载 API 密钥（优先级高于 .env）

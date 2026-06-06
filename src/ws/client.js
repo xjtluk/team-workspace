@@ -24,20 +24,23 @@ export function useWS() {
   const connect = useCallback(async () => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
-    // 获取认证 token
+    // 每次重连都重新获取 token（防止服务器重启后旧 token 失效）
     let wsUrl = WS_BASE;
     try {
       const res = await fetch('/api/auth/token');
       const { token } = await res.json();
       wsUrl = `${WS_BASE}?token=${token}`;
     } catch (e) {
-      console.error('Failed to fetch WS token:', e);
+      console.error('[WS] 获取 token 失败，3秒后重试:', e.message);
+      reconnectTimer.current = setTimeout(connect, 3000);
+      return;
     }
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
     ws.onopen = () => {
+      console.log('[WS] 连接成功');
       setWsConnected(true);
       if (reconnectTimer.current) {
         clearTimeout(reconnectTimer.current);
@@ -51,10 +54,10 @@ export function useWS() {
 
         // 处理 agent 状态变更
         if (data.type === 'status_change' && data.payload) {
-          const { agentId, status: agentStatus, activity, ...statusData } = data.payload;
+          const { agentId, status: agentStatus, activity, model, ...statusData } = data.payload;
           setAgents(prev => ({
             ...prev,
-            [agentId]: { ...prev[agentId], id: agentId, status: agentStatus, activity, ...statusData }
+            [agentId]: { ...prev[agentId], id: agentId, status: agentStatus, activity, model: model || prev[agentId]?.model || '', ...statusData }
           }));
           // agent 进入工作状态 → 把最近的 KK 消息标记为"执行中"
           if (agentStatus === 'working') {
@@ -87,7 +90,7 @@ export function useWS() {
         }
         // 处理 agent 上下线（携带完整状态）
         else if ((data.type === 'agent_online' || data.type === 'agent_offline') && data.payload) {
-          const { agentId, online, status, activity, progress, location } = data.payload;
+          const { agentId, online, status, activity, progress, location, model } = data.payload;
           setAgents(prev => ({
             ...prev,
             [agentId]: {
@@ -98,6 +101,8 @@ export function useWS() {
               activity: activity || '',
               progress: progress || 0,
               location: location || prev[agentId]?.location || 'sofa',
+              model: model || prev[agentId]?.model || '',
+              last_seen: Date.now(), // WS 事件到达时更新 last_seen
             }
           }));
         }
@@ -126,17 +131,21 @@ export function useWS() {
           }
         }
       } catch (e) {
-        console.error('WS message parse error:', e);
+        console.error('[WS] 消息解析错误:', e);
       }
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       setWsConnected(false);
       wsRef.current = null;
-      reconnectTimer.current = setTimeout(connect, 3000);
+      // 非正常关闭（如 token 失效 401）加速重连
+      const delay = event.code === 4001 ? 1000 : 3000;
+      console.log(`[WS] 连接关闭 (code=${event.code})，${delay / 1000}秒后重连`);
+      reconnectTimer.current = setTimeout(connect, delay);
     };
 
-    ws.onerror = () => {
+    ws.onerror = (err) => {
+      console.warn('[WS] 连接错误');
       ws.close();
     };
   }, []);
@@ -163,6 +172,7 @@ export function useWS() {
                 ...a,
                 status: a.current_status || a.status || 'idle',
                 activity: a.current_activity || a.activity || '',
+                model: a.model || '',
               };
             });
             return map;

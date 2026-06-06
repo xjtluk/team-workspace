@@ -25,6 +25,7 @@ export function setupWS(wss) {
           activity: agent.current_activity,
           progress: agent.progress,
           location: agent.location,
+          model: agent.model || '',
         },
       }));
     });

@@ -24,9 +24,9 @@ export function broadcast(event, excludeSenderId = null) {
   });
 }
 
-export function broadcastStatusChange(agentId, status, activity, progress, location) {
+export function broadcastStatusChange(agentId, status, activity, progress, location, model = '') {
   broadcast({
     type: 'status_change',
-    payload: { agentId, status, activity, progress, location, timestamp: Date.now() },
+    payload: { agentId, status, activity, progress, location, model, timestamp: Date.now() },
   });
 }

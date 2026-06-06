@@ -20,10 +20,10 @@ export function loadTeamMemory(projectDir) {
   const PROJECT_DIR = projectDir || 'D:/BKS/projects/team-workspace';
   const parts = [];
 
-  // 1. 团队守则（必须完整加载）
+  // 1. 团队守则（截断到 5000 字符，防止上下文过载）
   try {
     const rules = readFileSync(join(TEAM_DIR, '团队守则.md'), 'utf8');
-    parts.push('=== 团队守则（所有成员必须遵守）===\n' + rules);
+    parts.push('=== 团队守则（所有成员必须遵守）===\n' + rules.substring(0, 5000));
   } catch (e) {
     parts.push('团队守则加载失败: ' + e.message);
   }
