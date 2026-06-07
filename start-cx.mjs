@@ -90,4 +90,4 @@ if (process.argv[2]) {
   process.env.PROJECT_DIR = process.argv[2];
 }
 
-await import('./src/workers/cx-listener.mjs');
+await import('./src/workers/sidecar-cx.mjs');

@@ -5,14 +5,16 @@ import { ChatPanel } from './components/ChatPanel/ChatPanel.jsx';
 import { StatusBar } from './components/StatusBar/StatusBar.jsx';
 import { ResizeHandle } from './components/ResizeHandle/ResizeHandle.jsx';
 import { InfoPanel } from './components/InfoPanel/InfoPanel.jsx';
+import { TaskList } from './components/TaskList/TaskList.jsx';
+import { PrivateChatModal } from './components/PrivateChat/PrivateChatModal.jsx';
 import { useWS } from './ws/client.js';
 
-// 工位悬停状态信号
 const hoverSignal = signal({ target: null, visible: false });
 
 export function App() {
-  const { agents, messages, messageStatuses, wsConnected, sendMessage, currentChannel, switchChannel } = useWS();
+  const { agents, messages, allMessages, messageStatuses, wsConnected, sendMessage, currentChannel, switchChannel } = useWS();
   const [restartToast, setRestartToast] = useState(null);
+  const [privateChatAgent, setPrivateChatAgent] = useState(null);
   const prevOnlineRef = useRef({});
 
   const hoverTimerRef = useRef(null);
@@ -32,7 +34,14 @@ export function App() {
     }
   }, []);
 
-  // Agent 重启检测：从离线变在线时显示 toast
+  const handleAgentClick = useCallback((agent) => {
+    setPrivateChatAgent(agent);
+  }, []);
+
+  const handleClosePrivateChat = useCallback(() => {
+    setPrivateChatAgent(null);
+  }, []);
+
   const agentsList = Object.values(agents?.value || agents || {});
   useEffect(() => {
     const currentOnline = {};
@@ -58,7 +67,6 @@ export function App() {
 
   return (
     <div class="workspace">
-      {/* 重启通知 Toast */}
       {restartToast && (
         <div class="restart-toast">
           <span class="restart-toast-icon">🔄</span>
@@ -70,13 +78,14 @@ export function App() {
       <div class="workspace-left">
         <div class="workspace-canvas">
           <PixelOffice agents={agents} onHoverDesk={handleHoverDesk} />
+          <TaskList />
           <InfoPanel
             hoverTarget={hoverSignal.value.target}
             agents={agents}
             visible={hoverSignal.value.visible}
           />
         </div>
-        <StatusBar agents={agents} wsConnected={wsConnected} />
+        <StatusBar agents={agents} wsConnected={wsConnected} onAgentClick={handleAgentClick} />
       </div>
       <ResizeHandle />
       <div class="workspace-right">
@@ -89,6 +98,15 @@ export function App() {
           onSwitchChannel={switchChannel}
         />
       </div>
+
+      {privateChatAgent && (
+        <PrivateChatModal
+          agent={privateChatAgent}
+          onClose={handleClosePrivateChat}
+          onSend={sendMessage}
+          allMessages={allMessages}
+        />
+      )}
     </div>
   );
 }

@@ -13,7 +13,9 @@ module.exports = {
       kill_timeout: 5000,
       env: {
         NODE_ENV: 'production',
-        PORT: 3210
+        PORT: 3210,
+        // 心跳超时可配置化（单位 ms）
+        HEARTBEAT_TIMEOUT_MS: 60000,
       },
       log_date_format: 'YYYY-MM-DD HH:mm:ss',
       error_file: './logs/server-error.log',
@@ -32,7 +34,12 @@ module.exports = {
       max_memory_restart: '200M',
       kill_timeout: 5000,
       env: {
-        NODE_ENV: 'production'
+        NODE_ENV: 'production',
+        // 强制 UTF-8，解决 Windows GBK 乱码
+        PYTHONUTF8: '1',
+        PYTHONIOENCODING: 'utf-8',
+        LANG: 'en_US.UTF-8',
+        LC_ALL: 'en_US.UTF-8',
       },
       log_date_format: 'YYYY-MM-DD HH:mm:ss',
       error_file: './logs/cc-listener-error.log',
@@ -57,7 +64,7 @@ module.exports = {
       max_memory_restart: '100M',
       kill_timeout: 5000,
       env: {
-        NODE_ENV: 'production'
+        NODE_ENV: 'production',
       },
       log_date_format: 'YYYY-MM-DD HH:mm:ss',
       error_file: './logs/watchdog-error.log',
@@ -76,7 +83,16 @@ module.exports = {
       max_memory_restart: '200M',
       kill_timeout: 5000,
       env: {
-        NODE_ENV: 'production'
+        NODE_ENV: 'production',
+        // 强制 UTF-8，解决 Windows GBK 乱码
+        PYTHONUTF8: '1',
+        PYTHONIOENCODING: 'utf-8',
+        LANG: 'en_US.UTF-8',
+        LC_ALL: 'en_US.UTF-8',
+        // CX 执行超时（ms），复杂任务可调大
+        CX_EXEC_TIMEOUT_MS: 300000,
+        // 消息过期时间（ms）
+        CX_MSG_EXPIRE_MS: 300000,
       },
       log_date_format: 'YYYY-MM-DD HH:mm:ss',
       error_file: './logs/cx-listener-error.log',

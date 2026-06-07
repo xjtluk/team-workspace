@@ -10,9 +10,30 @@
  *   5. 定期上报状态
  */
 import { SidecarConnection, isAtAgent, reportStatus, sendMessage } from '../sdk/sidecar-core.mjs';
+import { validateMessage, createMessage } from '../sdk/message-schema.mjs';
 import { spawn, execSync } from 'child_process';
-import { readFileSync, unlinkSync, existsSync, mkdirSync } from 'fs';
+import { readFileSync, unlinkSync, existsSync, mkdirSync, appendFileSync } from 'fs';
 import { join } from 'path';
+import config from '../../config/index.js';
+
+// ── Trace 持久化 ──
+const TRACE_DIR = 'D:/BKS/projects/team-workspace/traces/cx';
+const today = new Date().toISOString().split('T')[0];
+const todayTraceDir = join(TRACE_DIR, today);
+
+if (!existsSync(todayTraceDir)) {
+  mkdirSync(todayTraceDir, { recursive: true });
+}
+
+function writeTraceEvent(traceId, event) {
+  try {
+    const tracePath = join(todayTraceDir, `${traceId}.jsonl`);
+    const line = JSON.stringify({ timestamp: Date.now(), ...event }) + '\n';
+    appendFileSync(tracePath, line, 'utf-8');
+  } catch (err) {
+    console.error(`[CX-Sidecar] Trace 写入失败: ${err.message}`);
+  }
+}
 
 // ── 配置 ──
 const AGENT_ID = 'cx';
@@ -25,11 +46,7 @@ const EXEC_TIMEOUT = 240000; // 240秒，复杂任务需要更多时间
 const MSG_EXPIRE_MS = 300000; // 消息过期时间：5分钟
 
 // ── 模型选择策略 ──
-const MODELS = {
-  heavy: { model: 'deepseek-v4-pro', reasoning: 'high' },    // 多文件、批量重构、复杂推理
-  medium: { model: 'deepseek-v4-pro', reasoning: 'medium' },  // 单文件修改、PR审查
-  light: { model: 'glm-4.7-flash', reasoning: 'low' },        // 读文件、列目录、快速检查
-};
+const MODELS = config.models;
 
 function selectModel(prompt) {
   const p = prompt.toLowerCase();
@@ -70,6 +87,13 @@ let isErrorCoolingDown = false;
 
 function enqueue(msg) {
   messageQueue.push({ msg, enqueuedAt: Date.now() });
+
+  // 队列积压告警：超过 5 条通知 CC
+  if (messageQueue.length > 5) {
+    console.warn(`[CX-Sidecar] 队列积压 ${messageQueue.length} 条，可能存在问题`);
+    sendMessage(AGENT_ID, `@CC [问题] 队列积压 ${messageQueue.length} 条消息，请检查是否有任务卡住`).catch(() => {});
+  }
+
   processQueue();
 }
 
@@ -232,49 +256,115 @@ function readReplyFile() {
 
 // ── 执行单个任务 ──
 async function executeTask(msg) {
+  const traceId = `cx_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
   const modelChoice = selectModel(msg.content);
   currentModel = modelChoice.model;
+  
+  writeTraceEvent(traceId, { event: 'start', model: currentModel, task: msg.content.substring(0, 100) });
   console.log(`[CX-Sidecar] 开始执行 (model: ${currentModel}, reasoning: ${modelChoice.reasoning}): "${msg.content.substring(0, 80)}..."`);
 
   try {
     await reportStatus(AGENT_ID, 'working', `正在处理: ${msg.content.substring(0, 30)}`, 30, { model: currentModel });
+    writeTraceEvent(traceId, { event: 'status', status: 'working' });
 
     await execCodex(msg.content, modelChoice.model);
+    writeTraceEvent(traceId, { event: 'exec_complete', model: currentModel });
 
     await reportStatus(AGENT_ID, 'working', '正在组织回复', 70, { model: currentModel });
 
     const reply = readReplyFile();
 
     if (reply) {
-      await sendMessage(AGENT_ID, reply);
-      console.log(`[CX-Sidecar] 回复已发送 (${reply.length} 字符)`);
+      writeTraceEvent(traceId, { event: 'reply_generated', length: reply.length });
+      
+      // Schema 校验：发送前校验回复消息
+      const replyMsg = createMessage({
+        from: AGENT_ID,
+        fromName: AGENT_NAME,
+        content: reply,
+        channel: msg.channel || 'group',
+      });
+      
+      if (replyMsg) {
+        await sendMessage(AGENT_ID, replyMsg.content, replyMsg.channel);
+        writeTraceEvent(traceId, { event: 'reply_sent', sent: true });
+        console.log(`[CX-Sidecar] 回复已发送 (${reply.length} 字符)`);
+      } else {
+        console.error(`[CX-Sidecar] 回复消息 Schema 校验失败，丢弃`);
+        writeTraceEvent(traceId, { event: 'reply_dropped', reason: 'schema_validation_failed' });
+      }
     } else {
-      await sendMessage(AGENT_ID, `@CC [完成] 任务已完成，无文本输出`);
+      writeTraceEvent(traceId, { event: 'done', output: 'empty' });
+      
+      const doneMsg = createMessage({
+        from: AGENT_ID,
+        fromName: AGENT_NAME,
+        content: `@CC [完成] 任务已完成，无文本输出`,
+        channel: msg.channel || 'group',
+      });
+      
+      if (doneMsg) {
+        await sendMessage(AGENT_ID, doneMsg.content, doneMsg.channel);
+      } else {
+        await sendMessage(AGENT_ID, `@CC [完成] 任务已完成，无文本输出`);
+      }
       console.log(`[CX-Sidecar] 任务完成，无文本输出`);
     }
+    writeTraceEvent(traceId, { event: 'completed', status: 'success' });
     return { success: true };
   } catch (err) {
     console.error(`[CX-Sidecar] 处理失败: ${err.message}`);
-    await sendMessage(AGENT_ID, `@CC [问题] 任务执行失败: ${err.message.substring(0, 100)}`);
+    writeTraceEvent(traceId, { event: 'error', message: err.message });
+    
+    const errorMsg = createMessage({
+      from: AGENT_ID,
+      fromName: AGENT_NAME,
+      content: `@CC [问题] 任务执行失败: ${err.message.substring(0, 100)}`,
+      channel: msg.channel || 'group',
+    });
+    
+    if (errorMsg) {
+      await sendMessage(AGENT_ID, errorMsg.content, errorMsg.channel);
+    } else {
+      await sendMessage(AGENT_ID, `@CC [问题] 任务执行失败: ${err.message.substring(0, 100)}`);
+    }
+    
     await reportStatus(AGENT_ID, 'error', '任务执行失败', 0, { model: currentModel });
+    writeTraceEvent(traceId, { event: 'completed', status: 'error', message: err.message });
     return { success: false };
   }
 }
 
-// ── 消息处理（入队前过滤） ──
+// ── 消息处理（入队前过滤 + Schema 校验） ──
 function handleMessage(event) {
   if (event.type !== 'new_message') return;
   const { payload: msg } = event;
   if (!msg || !msg.content) return;
 
+  // Schema 校验（接收前校验）
+  const { valid, errors } = validateMessage(msg);
+  if (!valid) {
+    console.warn(`[CX-Sidecar] 消息 Schema 校验失败:`, errors);
+    // 协议消息不做校验（向后兼容）
+    if (!isProtocolMessage(msg.content)) {
+      console.log(`[CX-Sidecar] 丢弃不符合 Schema 的消息`);
+      return; // 非协议消息，校验失败直接丢弃
+    }
+  }
+
   // 忽略自己发的消息
   if (msg.from === AGENT_ID) return;
+
+  // 频道过滤：只处理群聊和自己的私聊
+  const ch = msg.channel || 'group';
+  if (ch !== 'group' && ch !== `dm_${AGENT_ID}`) return;
 
   // 过滤协议消息（在入队前就拦截）
   if (isProtocolMessage(msg.content)) return;
 
-  // 只处理 @CX 的消息
-  if (!isAtAgent(msg.content, AGENT_ID)) return;
+  // 只处理 @CX 的消息（私聊通道跳过此检查——私聊本身就是发给你的）
+  const isPrivateChat = ch.startsWith('dm_');
+  if (!isPrivateChat && !isAtAgent(msg.content, AGENT_ID)) return;
 
   // CC的消息：协议消息已被core层过滤，剩余的@CX消息都应处理（包括任务、追问、指令）
   // KK/小马的@CX消息也应处理（老板可以直接指派CX）

@@ -26,8 +26,9 @@ import { writeFileSync, appendFileSync, mkdirSync, existsSync, readFileSync, unl
 import { join } from 'path';
 import { createServer } from 'http';
 import net from 'net';
+import config from '../config/index.js';
 
-const PROJECT_DIR = 'D:/BKS/projects/team-workspace';
+const PROJECT_DIR = config.paths.projectDir;
 const LOG_DIR = join(PROJECT_DIR, 'logs');
 const PID_FILE = join(PROJECT_DIR, '.watchdog.pid');
 const CONTROL_PORT = 3211;
@@ -155,6 +156,12 @@ function startService(service) {
       return;
     }
 
+    // 如果是手动重启触发的退出，跳过自动重启（由 restartService() 负责）
+    if (state.restarting) {
+      log('INFO', service.name, '手动重启中，跳过自动重启');
+      return;
+    }
+
     // 指数退避：10s, 20s, 40s, 80s... 最大 5 分钟
     const delay = Math.min(10000 * Math.pow(2, state.restarts - 1), 300000);
     log('INFO', service.name, `${delay / 1000}s 后重启 (第 ${state.restarts} 次)`);
@@ -186,7 +193,9 @@ function stopService(name) {
 function restartService(name) {
   const state = processes.get(name);
   if (!state) return false;
-  // 停止旧进程（exit 事件会自动触发重启）
+  // 标记手动重启中，阻止 exit 回调再次触发重启
+  state.restarting = true;
+  // 停止旧进程
   if (!state.proc.killed && state.proc.exitCode === null) {
     state.proc.kill('SIGTERM');
   }
@@ -396,8 +405,8 @@ function startControlServer() {
     res.end(JSON.stringify({ error: 'Not found. Use: GET /status, POST /restart/:service, POST /stop/:service, POST /start/:service, GET /health' }));
   });
 
-  server.listen(CONTROL_PORT, '0.0.0.0', () => {
-    log('INFO', 'watchdog', `控制 API 监听端口 ${CONTROL_PORT}`);
+  server.listen(CONTROL_PORT, '127.0.0.1', () => {
+    log('INFO', 'watchdog', `控制 API 监听端口 ${CONTROL_PORT} (仅本地访问)`);
   });
 
   server.on('error', (err) => {
@@ -442,6 +451,21 @@ async function main() {
   log('INFO', 'watchdog', '=== BKS Team Workspace Watchdog 启动 ===');
   log('INFO', 'watchdog', `项目目录: ${PROJECT_DIR}`);
   log('INFO', 'watchdog', `服务数量: ${SERVICES.filter(s => s.enabled).length}`);
+
+  // ── 启动前文件完整性检查 ──
+  log('INFO', 'watchdog', '执行启动前文件完整性检查...');
+  try {
+    execSync(`node "${join(PROJECT_DIR, 'scripts', 'check-files.mjs')}"`, {
+      cwd: PROJECT_DIR,
+      stdio: 'pipe',
+      windowsHide: true,
+    });
+    log('INFO', 'watchdog', '文件完整性检查通过');
+  } catch (e) {
+    const output = (e.stdout?.toString() || '') + (e.stderr?.toString() || '');
+    log('ERROR', 'watchdog', `文件完整性检查失败:\n${output}`);
+    log('WARN', 'watchdog', '存在文件损坏，仍然继续启动（部分服务可能异常）');
+  }
 
   // 冲突检测
   const { serverPortUsed, controlPortUsed } = await checkConflicts();

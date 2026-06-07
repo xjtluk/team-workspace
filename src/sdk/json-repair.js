@@ -1,24 +1,26 @@
-import { readFileSync, writeFileSync } from 'fs';
+// JSON/Text Repair Utilities
+// Extracted from ai-reply.js
+// No external dependencies — pure functions only.
 
-const TARGET = 'D:/BKS/projects/team-workspace/src/sdk/ai-reply.js';
-let content = readFileSync(TARGET, 'utf8');
+// 修复截断的 UTF-8 文本
+/**
+ * Fix truncated UTF-8 text by removing Unicode replacement characters.
+ * @param {string} text - Raw text that may contain truncated UTF-8 sequences
+ * @returns {string} Cleaned text
+ */
+function fixTruncatedUtf8(text) {
+  if (!text) return text;
 
-// Fix the double-escaped backslash in fixTruncatedJson
-// Current (wrong): '\\\\'  →  two backslashes in string
-// Correct:          '\\'    →  single backslash in string
-// In the source file, the wrong version appears as: !== '\\\\'
-// We need to change it to: !== '\\'
-// But careful: in the actual file bytes, '\\\\' is the literal text \\\\ (4 chars: \, \, \, \)
+  // 检测 Unicode 替换字符（U+FFFD），这是 UTF-8 解码失败的标志
+  if (text.includes('�')) {
+    // 移除末尾的替换字符
+    return text.replace(/�$/, '').trim();
+  }
 
-// The pattern in ai-reply.js is: !== '\\\\'
-// But that's confusing. Let me just rebuild the function correctly.
+  // 检测不完整的 UTF-8 序列（高位字节后缺少低位字节）
+  return text;
+}
 
-// Find fixTruncatedJson function boundaries
-const funcStart = content.indexOf('function fixTruncatedJson(jsonStr, source)');
-const funcEnd = content.indexOf('\nasync function callAnthropic', funcStart);
-
-if (funcStart !== -1 && funcEnd !== -1) {
-  const correctFunc = `
 /**
  * Fix truncated JSON by closing unclosed strings and balancing brackets.
  * Used when API response is cut off due to model output truncation.
@@ -38,12 +40,12 @@ function fixTruncatedJson(jsonStr, source) {
     
     // Fix 1: Close unclosed string (Unterminated string in JSON)
     if (e.message.indexOf('Unterminated string') !== -1) {
-      const posMatch = e.message.match(/position (\\d+)/);
+      const posMatch = e.message.match(/position (\d+)/);
       if (posMatch) {
         const pos = parseInt(posMatch[1]);
         let inString = false;
         for (let i = 0; i < Math.min(pos, fixed.length); i++) {
-          if (fixed[i] === '"' && (i === 0 || fixed[i-1] !== '\\\\')) {
+          if (fixed[i] === '"' && (i === 0 || fixed[i-1] !== '\\')) {
             inString = !inString;
           }
         }
@@ -60,7 +62,7 @@ function fixTruncatedJson(jsonStr, source) {
       let inString = false;
       for (let i = 0; i < fixed.length; i++) {
         const ch = fixed[i];
-        if (ch === '"' && (i === 0 || fixed[i-1] !== '\\\\')) {
+        if (ch === '"' && (i === 0 || fixed[i-1] !== '\\')) {
           inString = !inString;
         }
         if (!inString) {
@@ -85,11 +87,23 @@ function fixTruncatedJson(jsonStr, source) {
     }
   }
 }
-`;
 
-  content = content.substring(0, funcStart) + correctFunc + '\n' + content.substring(funcEnd);
-  writeFileSync(TARGET, content, 'utf8');
-  console.log('Fixed escape sequences in fixTruncatedJson');
-} else {
-  console.error('Could not find function boundaries');
+// 清洗工具调用标签（防止泄露到群聊）
+/**
+ * Strip tool_call, think, and DSML-format tool_calls XML tags from text.
+ * @param {string} text - Raw text that may contain tool call tags
+ * @returns {string} Cleaned text
+ */
+function cleanToolCallTags(text) {
+  if (!text) return '';
+  return text
+    .replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
+    .replace(/<think>[\s\S]*?<\/think>/g, '')
+    // DSML 格式：兼容单竖线和双竖线
+    .replace(/<｜?DSML｜?tool_calls>[\s\S]*?<\/｜?DSML｜?tool_calls>/g, '')
+    .replace(/<\/｜?DSML｜?[^>]*>?/g, '')
+    .replace(/<｜?DSML｜?[^>]*>/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
+export { fixTruncatedUtf8, fixTruncatedJson, cleanToolCallTags };

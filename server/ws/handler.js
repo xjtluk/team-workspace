@@ -1,8 +1,15 @@
-import { query, run } from '../db.js';
+﻿import { query, run } from '../db.js';
 import { isDuplicate } from './dedup.js';
 import { addClient, removeClient, getClientCount, broadcast, broadcastStatusChange } from './broadcast.js';
 
-const VALID_CHANNELS = ['group', 'dm', 'system'];
+const STATIC_CHANNELS = ['group', 'system'];
+
+function isValidChannel(ch) {
+  if (!ch || typeof ch !== 'string') return false;
+  if (STATIC_CHANNELS.includes(ch)) return true;
+  if (ch.startsWith('dm_') && ch.length > 3) return true; // dm_cc, dm_cx, etc.
+  return false;
+}
 
 export function setupWS(wss) {
   wss.on('connection', (ws) => {
@@ -74,7 +81,7 @@ function handleMessage(ws, msg) {
 function handleSendMessage(ws, payload) {
   const now = Date.now();
   const senderId = payload.from || 'kk';
-  const channel = VALID_CHANNELS.includes(payload.channel) ? payload.channel : 'group';
+  const channel = isValidChannel(payload.channel) ? payload.channel : 'group';
   const rand = Math.random().toString(36).substring(2, 8);
   const messageId = `msg_${now}_${senderId}_${rand}`;
 
@@ -97,7 +104,7 @@ function handleSendMessage(ws, payload) {
   broadcast({
     type: 'new_message',
     payload: {
-      id: frontendMsgId, // 用前端 ID，保证去重
+      id: messageId,
       from: senderId,
       fromName: payload.fromName || 'KK',
       content: payload.content,

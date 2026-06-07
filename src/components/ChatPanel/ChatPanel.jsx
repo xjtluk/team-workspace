@@ -18,16 +18,12 @@ const ALIGN = {
   'xiaoma-ai': 'left',
 };
 
-const CHANNELS = [
-  { id: 'group', name: '群聊', icon: '👥' },
-  { id: 'dm', name: '私聊', icon: '💬' },
-];
-
-export function ChatPanel({ messages, messageStatuses, agents, onSend, currentChannel, onSwitchChannel }) {
+export function ChatPanel({ messages, messageStatuses, agents, onSend }) {
   const listRef = useRef(null);
-  const msgList = messages.value || messages;
+  const allMessages = messages.value || messages;
+  // 只显示群聊消息，过滤掉私聊
+  const msgList = allMessages.filter(m => !m.channel || m.channel === 'group');
   const statuses = messageStatuses?.value || messageStatuses || {};
-  const channel = currentChannel?.value || currentChannel || 'group';
 
   // 自动滚动到底部
   useEffect(() => {
@@ -41,9 +37,6 @@ export function ChatPanel({ messages, messageStatuses, agents, onSend, currentCh
 
   const agentList = Object.values(agents.value || agents);
 
-  const handleSwitch = (ch) => {
-    if (onSwitchChannel) onSwitchChannel(ch);
-  };
 
   return (
     <div class="chat-panel">
@@ -54,19 +47,6 @@ export function ChatPanel({ messages, messageStatuses, agents, onSend, currentCh
         </span>
       </div>
 
-      {/* 频道切换 */}
-      <div class="channel-tabs">
-        {CHANNELS.map(ch => (
-          <button
-            key={ch.id}
-            class={`channel-tab ${channel === ch.id ? 'channel-active' : ''}`}
-            onClick={() => handleSwitch(ch.id)}
-          >
-            <span class="channel-icon">{ch.icon}</span>
-            <span class="channel-name">{ch.name}</span>
-          </button>
-        ))}
-      </div>
 
       <div class="message-list" ref={listRef}>
         {msgList.map(msg => (
@@ -81,7 +61,7 @@ export function ChatPanel({ messages, messageStatuses, agents, onSend, currentCh
         ))}
       </div>
 
-      <ChatInput onSend={onSend} currentChannel={channel} />
+      <ChatInput onSend={onSend} currentChannel="group" />
     </div>
   );
 }

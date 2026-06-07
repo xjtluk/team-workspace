@@ -75,6 +75,20 @@ export async function initDB() {
     // 列已存在，忽略
   }
 
+  // 迁移：给 tasks 表加依赖字段（P0 任务系统升级）
+  try {
+    db.run(`ALTER TABLE tasks ADD COLUMN blocked_by TEXT DEFAULT '[]'`);
+    console.log('[DB] 迁移：已添加 blocked_by 列');
+  } catch {
+    // 列已存在，忽略
+  }
+  try {
+    db.run(`ALTER TABLE tasks ADD COLUMN blocks TEXT DEFAULT '[]'`);
+    console.log('[DB] 迁移：已添加 blocks 列');
+  } catch {
+    // 列已存在，忽略
+  }
+
   db.run(`CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(channel)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_messages_channel_time ON messages(channel, created_at)`);
@@ -93,6 +107,37 @@ export async function initDB() {
   `);
 
   db.run(`CREATE INDEX IF NOT EXISTS idx_status_log_agent_time ON status_log(agent_id, created_at)`);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS tasks (
+      id              TEXT PRIMARY KEY,
+      title           TEXT NOT NULL,
+      description     TEXT DEFAULT "",
+      source          TEXT DEFAULT "cc",
+      status          TEXT DEFAULT "pending",
+      priority        TEXT DEFAULT "medium",
+      assignee        TEXT DEFAULT "",
+      source_msg_id   TEXT DEFAULT "",
+      created_at      INTEGER NOT NULL,
+      updated_at      INTEGER NOT NULL
+    )
+  `);
+
+  db.run(`CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_tasks_source ON tasks(source)`);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS subtasks (
+      id              TEXT PRIMARY KEY,
+      task_id         TEXT NOT NULL,
+      title           TEXT NOT NULL,
+      status          TEXT DEFAULT "pending",
+      sort_order      INTEGER DEFAULT 0,
+      created_at      INTEGER NOT NULL,
+      updated_at      INTEGER NOT NULL
+    )
+  `);
+
 
   db.run(`
     CREATE TABLE IF NOT EXISTS offline_queue (

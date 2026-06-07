@@ -81,4 +81,4 @@ console.log(`[CC]    项目目录: ${process.env.PROJECT_DIR || 'D:/BKS/projects
 console.log(`[CC]    Base URL: ${process.env.ANTHROPIC_BASE_URL}`);
 console.log(`[CC]    模型: ${process.env.ANTHROPIC_MODEL || 'default'}`);
 
-await import('./src/sdk/examples/cc-listener.mjs');
+await import('./src/workers/sidecar-cc.mjs');

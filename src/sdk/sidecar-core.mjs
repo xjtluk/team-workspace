@@ -1,13 +1,15 @@
-/**
- * Sidecar Core — Agent Sidecar 公共模块
+﻿/**
+ * Sidecar Core �?Agent Sidecar 公共模块
  *
- * WebSocket 连接管理（断线 fallback 到 HTTP 心跳）
+ * WebSocket 连接管理（断�?fallback �?HTTP 心跳�?
  * 消息解析（@CC/@CX 检测）
- * 状态上报（POST /api/status）
- * 消息发送（POST /api/message）
- * Agent 注册（POST /api/register）
+ * 状态上报（POST /api/status�?
+ * 消息发送（POST /api/message�?
+ * Agent 注册（POST /api/register�?
  */
 import WebSocket from 'ws';
+import { appendFileSync, mkdirSync } from 'fs';
+import config from '../../config/index.js';
 
 // Configuration
 const SERVER_URL = process.env.SERVER_URL || 'http://localhost:3210';
@@ -22,7 +24,7 @@ async function retryFetch(url, options, maxRetries = 2) {
     const res = await fetch(url, options);
     if (res.status === 429 && i < maxRetries) {
       const delay = Math.min(1000 * Math.pow(2, i), 5000);
-      console.warn(`[HTTP] 429 Too Many Requests, ${delay}ms 后重试 (${i + 1}/${maxRetries})`);
+      console.warn(`[HTTP] 429 Too Many Requests, ${delay}ms 后重�?(${i + 1}/${maxRetries})`);
       await new Promise(r => setTimeout(r, delay));
       continue;
     }
@@ -115,7 +117,7 @@ export class SidecarConnection {
     this.ws.on('close', (code) => {
       this._connected = false;
       this._offlinePulled = false;
-      console.log(`[${this.agentId}] WebSocket 断开 (${code})，${this.reconnectDelay}ms后重连`);
+      console.log(`[${this.agentId}] WebSocket 断开 (${code})�?{this.reconnectDelay}ms后重连`);
       this._scheduleReconnect();
       this._emit('disconnected');
     });
@@ -128,7 +130,7 @@ export class SidecarConnection {
       this.lastMessageTime = Date.now();
       try {
         const event = JSON.parse(data.toString());
-        // 统一走 _processNewMessages 去重，防止 WebSocket 和离线拉取重复
+        // 统一�?_processNewMessages 去重，防�?WebSocket 和离线拉取重�?
         if (event.type === 'new_message' && event.payload) {
           this._processNewMessages([event.payload]);
         } else {
@@ -163,15 +165,15 @@ export class SidecarConnection {
         });
         const data = await res.json();
 
-        // 首次上线 → 拉取离线消息
+        // 首次上线 �?拉取离线消息
         this._pullOfflineOnConnect();
 
-        // 处理心跳响应中的新消息（基于 lastSeenTimestamp 增量）
+        // 处理心跳响应中的新消息（基于 lastSeenTimestamp 增量�?
         if (data.newMessages?.length) {
           this._processNewMessages(data.newMessages);
         }
 
-        // 更新时间戳
+        // 更新时间�?
         if (data.serverTimestamp) {
           this.lastSeenTimestamp = data.serverTimestamp;
         }
@@ -187,7 +189,7 @@ export class SidecarConnection {
       const res = await retryFetch(`${this.serverUrl}/api/offline/pull?agentId=${encodeURIComponent(this.agentId)}`);
       const data = await res.json();
       if (data.ok && data.messages?.length) {
-        console.log(`[${this.agentId}] 拉取到 ${data.messages.length} 条离线消息`);
+        console.log(`[${this.agentId}] 拉取�?${data.messages.length} 条离线消息`);
         this._processNewMessages(data.messages);
       }
     } catch (e) {
@@ -195,7 +197,7 @@ export class SidecarConnection {
     }
   }
 
-  // 协议消息过滤（在 core 层统一拦截，不派发给 handler）
+  // 协议消息过滤（在 core 层统一拦截，不派发�?handler�?
   _isProtocolMessage(content) {
     if (!content) return true;
     if (content.includes('[收到]')) return true;
@@ -203,17 +205,17 @@ export class SidecarConnection {
     if (content.includes('[完成]')) return true;
     if (content.includes('[子任务完成]')) return true;
     if (content.trim() === 'hb') return true;
-    if (content.startsWith('当前任务执行中')) return true;
+    if (content.startsWith('当前任务执行')) return true;
     return false;
   }
 
-  // 新消息处理 — 去重 + 协议过滤 + 触发 message 事件
+  // 新消息处理：去重 + 协议过滤 + 触发 message 事件
   _processNewMessages(messages) {
     if (!messages?.length) return;
     for (const msg of messages) {
       if (this._seenMessageIds.has(msg.id)) continue;
       this._seenMessageIds.add(msg.id);
-      // core 层拦截协议消息
+      // core 层拦截协议消�?
       if (this._isProtocolMessage(msg.content)) continue;
       this._emit('message', {
         type: 'new_message',
@@ -238,7 +240,7 @@ export class SidecarConnection {
   _startWatchdog() {
     setInterval(() => {
       if (this._connected && Date.now() - this.lastMessageTime > 90000) {
-        console.warn(`[${this.agentId}] WebSocket 假死（90秒无消息），强制重连`);
+        console.warn(`[${this.agentId}] WebSocket 假死�?0秒无消息），强制重连`);
         try { this.ws?.terminate(); } catch {}
       }
     }, 30000);
@@ -277,7 +279,7 @@ export async function reportStatus(agentId, status, activity = '', progress = 0,
     });
     return res.ok;
   } catch (e) {
-    console.error(`[${agentId}] 状态上报失败: ${e.message}`);
+    console.error(`[${agentId}] 状态上报失�? ${e.message}`);
     return false;
   }
 }
@@ -296,7 +298,63 @@ export async function sendMessage(from, content, channel = 'group') {
     }
     return true;
   } catch (e) {
-    console.error(`[${from}] 消息发送失败: ${e.message}`);
+    console.error(`[${from}] 消息发送失�? ${e.message}`);
     return false;
   }
+}
+// ============================================================
+// Security Layer �?命令安全 + 审计日志
+// ============================================================
+
+/** 危险命令黑名单（子串匹配，大小写不敏感） */
+const DANGEROUS_COMMANDS = [
+  "rm -rf", "rm -r", "del /f", "del /s", "del /q",
+  "format", "shutdown", "restart", "reboot", "halt",
+  "taskkill /f", "diskpart", "reg delete", "reg add",
+  "dd if=", "mkfs", "chmod 777", "chown root",
+  ":(){ :|:& };:", "> /dev/sda",
+];
+
+/** 检查命令是否安全（不在黑名单中�?*/
+export function isCommandSafe(cmd) {
+  if (!cmd || typeof cmd !== "string") return true;
+  const lower = cmd.toLowerCase();
+  return !DANGEROUS_COMMANDS.some(dc => lower.includes(dc.toLowerCase()));
+}
+
+const AUDIT_LOG = config.audit.logPath;
+
+/** �����־��ͬ��׷�� JSON �е��̶�·�� */
+export function auditLog(action, agentId, detail) {
+  const line = JSON.stringify({ts: Date.now(), action, agentId, detail}) + '\n';
+  try {
+    mkdirSync(config.audit.logDir, { recursive: true });
+    appendFileSync(AUDIT_LOG, line);
+  } catch {}
+}
+
+// ============================================================
+// KK Task Interaction — 从群聊消息创建任务
+// ============================================================
+import { taskManager } from './task-manager.mjs';
+
+/** 从群聊消息创建 KK 任务 */
+export function createTaskFromMessage(msg) {
+  const task = {
+    id: `task_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    title: (msg.content || '').slice(0, 80),
+    source: msg.from || 'unknown',
+    status: 'pending',
+    createdAt: Date.now(),
+    sourceMsgId: msg.id || '',
+  };
+  taskManager.addTask(task);
+  auditLog('task_created', task.source, task.title);
+  return task;
+}
+
+/** 格式化任务状态为中文 */
+const STATUS_MAP = { pending: '待处理', in_progress: '进行中', completed: '完成', failed: '失败' };
+export function formatTaskStatus(task) {
+  return STATUS_MAP[task?.status] || '待处理';
 }

@@ -1,0 +1,397 @@
+/* === TaskList — blackboard style task panel === */
+
+.task-list {
+  display: flex;
+  flex-direction: column;
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 50;
+  width: 300px;
+  height: 400px;
+  background:
+    radial-gradient(ellipse at 15% 40%, rgba(255,255,255,0.03) 0%, transparent 55%),
+    radial-gradient(ellipse at 75% 70%, rgba(255,255,255,0.02) 0%, transparent 50%),
+    #2d4a2d;
+  border-radius: 6px;
+  box-shadow:
+    0 0 0 6px #8B4513,
+    0 0 0 10px #6B3410,
+    0 0 0 12px #4A2F10,
+    6px 6px 16px rgba(0,0,0,0.5);
+  font-family: "Press Start 2P", monospace;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+/* ---- header ---- */
+.task-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px 12px;
+  font-size: 12px;
+  color: #f0f0d8;
+  text-shadow:
+    0 0 4px rgba(255,255,255,0.35),
+    0 0 2px rgba(255,255,255,0.2);
+  background: rgba(0,0,0,0.12);
+  border-bottom: 2px dashed rgba(255,255,255,0.2);
+  flex-shrink: 0;
+}
+
+.task-list-count {
+  font-size: 8px;
+  color: #e0e0c0;
+  background: rgba(255,255,255,0.08);
+  padding: 2px 8px;
+  border-radius: 2px;
+  text-shadow: 0 0 2px rgba(255,255,255,0.2);
+}
+
+/* ---- body (scrollable) ---- */
+.task-list-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.task-list-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.task-list-body::-webkit-scrollbar-track {
+  background: rgba(0,0,0,0.15);
+}
+
+.task-list-body::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.18);
+  border-radius: 4px;
+}
+
+.task-list-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.28);
+}
+
+/* ---- task card ---- */
+.task-card {
+  background: rgba(0,0,0,0.12);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 2px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.task-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.task-card-title {
+  font-size: 8px;
+  color: #f0f0d8;
+  text-shadow: 0 0 2px rgba(255,255,255,0.25);
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.task-card-status {
+  font-size: 7px;
+  flex-shrink: 0;
+  text-shadow: 0 0 2px rgba(255,255,255,0.15);
+}
+
+/* ---- subtask list ---- */
+.task-subtasks {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px 0 0;
+  border-top: 1px dashed rgba(255,255,255,0.1);
+}
+
+/* ---- subtask row ---- */
+.subtask-row {
+  display: flex;
+  cursor: pointer;
+  transition: background 0.2s;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  background: rgba(0,0,0,0.08);
+  border-radius: 2px;
+}
+
+.subtask-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 4px currentColor;
+}
+
+.subtask-title {
+  font-size: 7px;
+  color: #e0e0c0;
+  text-shadow: 0 0 2px rgba(255,255,255,0.15);
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.subtask-assignee {
+  font-size: 6px;
+  color: #d0d0b0;
+  text-shadow: 0 0 1px rgba(255,255,255,0.1);
+  flex-shrink: 0;
+  max-width: 90px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.subtask-row:hover {
+  background: rgba(255,255,255,0.1);
+}
+
+.subtask-status {
+  font-size: 6px;
+  flex-shrink: 0;
+  text-transform: uppercase;
+  text-shadow: 0 0 2px rgba(255,255,255,0.15);
+}
+
+/* ---- empty / error states ---- */
+.task-list-empty {
+  padding: 24px 14px;
+  font-size: 9px;
+  color: #c0c0a0;
+  text-shadow: 0 0 3px rgba(255,255,255,0.2);
+  text-align: center;
+}
+
+.task-list-error {
+  padding: 24px 14px;
+  font-size: 7px;
+  color: #F56C6C;
+  text-shadow: 0 0 3px rgba(245,108,108,0.3);
+  text-align: center;
+}
+
+/* ---- 昨日小记按钮 ---- */
+.task-list-yday-btn {
+  font-family: "Press Start 2P", monospace;
+  font-size: 7px;
+  color: #c0c0a0;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 2px;
+  padding: 3px 8px;
+  cursor: pointer;
+  text-shadow: 0 0 2px rgba(255,255,255,0.15);
+  transition: background 0.2s;
+}
+
+.task-list-yday-btn:hover {
+  background: rgba(255,255,255,0.15);
+  color: #f0f0d8;
+}
+
+/* ---- 昨日小记 overlay ---- */
+.yesterday-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+}
+
+.yesterday-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background:
+    radial-gradient(ellipse at 15% 40%, rgba(255,255,255,0.03) 0%, transparent 55%),
+    #2d4a2d;
+}
+
+.yesterday-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 18px 12px;
+  background: rgba(0,0,0,0.12);
+  border-bottom: 2px dashed rgba(255,255,255,0.2);
+  flex-shrink: 0;
+}
+
+.yesterday-back {
+  font-family: "Press Start 2P", monospace;
+  font-size: 8px;
+  color: #c0c0a0;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 2px;
+  padding: 4px 10px;
+  cursor: pointer;
+  text-shadow: 0 0 2px rgba(255,255,255,0.15);
+  transition: background 0.2s;
+}
+
+.yesterday-back:hover {
+  background: rgba(255,255,255,0.15);
+  color: #f0f0d8;
+}
+
+.yesterday-title {
+  font-family: "Press Start 2P", monospace;
+  font-size: 10px;
+  color: #f0f0d8;
+  text-shadow: 0 0 4px rgba(255,255,255,0.35);
+}
+
+.yesterday-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.yesterday-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.yesterday-body::-webkit-scrollbar-track {
+  background: rgba(0,0,0,0.15);
+}
+
+.yesterday-body::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.18);
+  border-radius: 4px;
+}
+
+.yesterday-loading,
+.yesterday-empty {
+  padding: 24px 14px;
+  font-size: 9px;
+  color: #c0c0a0;
+  text-shadow: 0 0 3px rgba(255,255,255,0.2);
+  text-align: center;
+}
+
+.yesterday-section {
+  margin-bottom: 12px;
+}
+
+.yesterday-section-title {
+  font-family: "Press Start 2P", monospace;
+  font-size: 8px;
+  margin-bottom: 8px;
+  text-shadow: 0 0 3px rgba(255,255,255,0.2);
+}
+
+.yesterday-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: rgba(0,0,0,0.08);
+  border-radius: 2px;
+  margin-bottom: 4px;
+  border-left: 3px solid transparent;
+}
+
+.yesterday-item.done {
+  border-left-color: #67C23A;
+}
+
+.yesterday-item.incomplete {
+  border-left-color: #E6A23C;
+}
+
+.yesterday-item-title {
+  font-size: 7px;
+  color: #e0e0c0;
+  text-shadow: 0 0 2px rgba(255,255,255,0.15);
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.yesterday-item-assignee {
+  font-size: 6px;
+  color: #d0d0b0;
+  text-shadow: 0 0 1px rgba(255,255,255,0.1);
+  flex-shrink: 0;
+}
+
+.yesterday-footer {
+  font-size: 7px;
+  color: #c0c0a0;
+  text-shadow: 0 0 2px rgba(255,255,255,0.15);
+  padding: 10px 0 0;
+  border-top: 1px dashed rgba(255,255,255,0.1);
+  margin-top: 8px;
+}
+
+/* ---- Dependency Visualization (P0) ---- */
+.task-blocked {
+  opacity: 0.6;
+  border-left: 3px solid #E6A23C;
+}
+
+.task-blocked-badge {
+  font-size: 10px;
+  margin-left: 4px;
+  cursor: help;
+}
+
+.task-dependencies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 0;
+  font-size: 6px;
+}
+
+.dep-badge {
+  padding: 2px 6px;
+  border-radius: 2px;
+  background: rgba(255,255,255,0.08);
+  color: #d0d0b0;
+  text-shadow: 0 0 1px rgba(255,255,255,0.1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.dep-blocked-by {
+  border-left: 2px solid #E6A23C;
+}
+
+.dep-blocks {
+  border-left: 2px solid #67C23A;
+}
+
+.dep-badge:hover {
+  background: rgba(255,255,255,0.15);
+  color: #f0f0d8;
+}

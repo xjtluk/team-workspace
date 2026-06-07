@@ -28,7 +28,13 @@ export function useWS() {
     let wsUrl = WS_BASE;
     try {
       const res = await fetch('/api/auth/token');
+      if (!res.ok) {
+        throw new Error(`Token fetch failed: HTTP ${res.status}`);
+      }
       const { token } = await res.json();
+      if (!token) {
+        throw new Error('Token endpoint returned empty token');
+      }
       wsUrl = `${WS_BASE}?token=${token}`;
     } catch (e) {
       console.error('[WS] 获取 token 失败，3秒后重试:', e.message);
@@ -297,5 +303,5 @@ export function useWS() {
   // 获取当前频道的消息
   const channelMessages = messages.filter(m => (m.channel || 'group') === currentChannel);
 
-  return { agents, messages: channelMessages, messageStatuses, wsConnected, sendMessage, currentChannel, switchChannel };
+  return { agents, messages: channelMessages, allMessages: messages, messageStatuses, wsConnected, sendMessage, currentChannel, switchChannel };
 }
